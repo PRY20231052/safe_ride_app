@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_const_constructors
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../styles.dart';
@@ -53,7 +55,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     Column(
                       children: [
                         const Text('Sign Up', style: MyTextStyles.title),
-                        Templates.spaceBoxH,
+                        SizedBox(height: 8,),
                         ListView.builder(
                           itemBuilder: (context, index) {
                             return Container(
@@ -65,10 +67,31 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           physics: const NeverScrollableScrollPhysics(),
                           itemCount: textFields.length,
                         ),
-                        Templates.elevatedButton("Sign Up", () {})
+                        Container(
+                          height: 50,
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            style: MyButtonStyles.primary,
+                            child: Text('Sign Up', style: MyTextStyles.primaryButton,),
+                            onPressed: () {
+                              
+                            },
+                          ),
+                        ),
                       ],
                     ),
-                    Templates.captionRowForPage("Already have an account?", 'Sign In', context, const LogInScreen())
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Already have an account?",),
+                        TextButton(
+                          child: Text('Sign In',),
+                          onPressed: () {
+                            Navigator.push(context, CupertinoPageRoute(builder: (context) => LogInScreen()));
+                          },
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

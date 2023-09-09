@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_const_constructors, sized_box_for_whitespace
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../styles.dart';
@@ -50,18 +52,36 @@ class _LogInScreenState extends State<LogInScreen> {
                     Column(
                       children: [
                         const Text('Sign In', style: MyTextStyles.title),
-                        Templates.spaceBoxH,
+                        SizedBox(height: 5,),
                         emailTextField,
-                        Templates.spaceBoxH,
+                        SizedBox(height: 5,),
                         passwordTextField,
-                        Templates.spaceBoxH,
-                        Templates.elevatedButton("Login", () {
-                          Navigator.push(context, CupertinoPageRoute(builder: (context) => const MapScreen()));
-                        }),
+                        SizedBox(height: 5,),
+                        Container(
+                          height: 50,
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            style: MyButtonStyles.primary,
+                            child: Text('Login', style: MyTextStyles.primaryButton,),
+                            onPressed: () {
+                              Navigator.push(context, CupertinoPageRoute(builder: (context) => const MapScreen()));
+                            },
+                          ),
+                        ),
                       ],
-
                     ),
-                    Templates.captionRowForPage("Don't have an account?", 'Sign Up', context, const SignUpScreen())
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Don't have an account?"),
+                        TextButton(
+                          child: Text('Sign Up'),
+                          onPressed: () {
+                            Navigator.push(context, CupertinoPageRoute(builder: (context) => SignUpScreen()));
+                          },
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

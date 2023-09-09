@@ -16,8 +16,18 @@ class MyColors {
   static const Color black = Color(0xff000000);
   static const Color darkGrey = Color(0xFF3A3A3A);
   static const Color grey = Color(0xFF818181);
-  static const Color lightGrey = Color(0xFFEDEDED);
+  static const Color lightGrey = Color(0xFFE7E7E7);
+  static const Color lightestGrey = Color(0xFFF8F8F8);
   static const Color white = Color(0xffffffff);
+}
+
+class MyButtonStyles {
+  static ButtonStyle primary = ElevatedButton.styleFrom(
+    backgroundColor: MyColors.mainTurquoise,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(10),
+    ),
+  );
 }
 
 class MyTextStyles {
@@ -51,7 +61,7 @@ class MyTextStyles {
     fontWeight: FontWeight.w500,
     fontSize: 20,
     letterSpacing: -0.04,
-    color: MyColors.green,
+    color: MyColors.black,
   );
   static const TextStyle h3 = TextStyle(
     fontFamily: fontName,
@@ -75,7 +85,7 @@ class MyTextStyles {
     color: MyColors.grey,
   );
 
-  static const TextStyle button = TextStyle(
+  static const TextStyle primaryButton = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w700,
     fontSize: 16,
@@ -104,21 +114,6 @@ class MyTextStyles {
     fontSize: 16,
     color: MyColors.black,
   );
-
-  static const TextStyle caption = TextStyle(
-    fontFamily: fontName,
-    fontWeight: FontWeight.w500,
-    fontSize: 14,
-    letterSpacing: 0.2,
-    color: MyColors.darkGrey,
-  );
-  static const TextStyle noCaption = TextStyle(
-    fontFamily: fontName,
-    fontWeight: FontWeight.w400,
-    fontSize: 14,
-    letterSpacing: 0.2,
-    color: MyColors.grey,
-  );
 }
 
 class Templates {
@@ -129,11 +124,6 @@ class Templates {
   static const EdgeInsets paddingApp = EdgeInsets.all(24);
   static const EdgeInsets paddingHorizontal = EdgeInsets.symmetric(horizontal: 16);
   static const EdgeInsets paddingCard = EdgeInsets.all(16);
-
-  static const SizedBox spaceBoxH = SizedBox(height: 20);
-  static const SizedBox spaceBoxW = SizedBox(width: 20);
-  static SizedBox spaceBoxNW(double n) => SizedBox(width: n);
-  static SizedBox spaceBoxNH(double n) => SizedBox(height: n);
 
   static const OutlineInputBorder basicIB = OutlineInputBorder(
       borderRadius: BorderRadius.all(Radius.circular(10)),
@@ -172,10 +162,23 @@ class Templates {
     onTap: onTap,
   );
 
-  static InputDecoration locationInputDecoration(text, Container prefixIcon) => 
+  static InputDecoration locationInputDecoration(text, Container? prefixIcon) => 
   InputDecoration(
+    filled: true,
+    fillColor: MyColors.lightestGrey,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(25),
+      borderSide: BorderSide.none,
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(25),
+      borderSide: BorderSide(
+        color: MyColors.grey,
+        width: 2,
+      ),
+    ),
+    contentPadding: EdgeInsets.symmetric(horizontal: 20), //to avoid oversizing when putting border
     prefixIcon: prefixIcon,
-    border: InputBorder.none,
     hintText: text,
     hintStyle: MyTextStyles.hintTextStyle,
   );
@@ -195,21 +198,7 @@ class Templates {
     onTap: onTap,
   );
 
-  static SizedBox elevatedButton(text, onPressed) => SizedBox(
-    height: 50,
-    width: double.infinity,
-    child: ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: MyColors.mainTurquoise,
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-      ),
-      onPressed: onPressed,
-      child: Text(uppercase(text), style: MyTextStyles.button),
-    ),
-  );
+  
 
   static ElevatedButton selectButton(text, onPressed) => ElevatedButton(
     style: ElevatedButton.styleFrom(
@@ -221,35 +210,6 @@ class Templates {
     ),
     onPressed: onPressed,
     child: Text(text, style: MyTextStyles.button2),
-  );
-
-  static Row captionRowForPage(text, pageName, context, StatefulWidget page) => Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-      Text(text, style: MyTextStyles.noCaption),
-      TextButton(
-        child: Text(pageName, style: MyTextStyles.caption),
-        onPressed: () {
-          Navigator.push(
-              context, CupertinoPageRoute(builder: (context) => page));
-        },
-      ),
-    ],
-  );
-
-  static Container routeTag( lable, IconData icon)=> Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: MyColors.lightGrey,
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Row(
-      children: [
-        Icon(icon, color: MyColors.darkGrey),
-        spaceBoxNW(10),
-        Text(lable, style: MyTextStyles.noCaption),
-      ],
-    ),
   );
 
   static String uppercase(String text) {

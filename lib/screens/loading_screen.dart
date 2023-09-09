@@ -35,7 +35,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Text('Safe\nRide', style: MyTextStyles.head),
-              Templates.spaceBoxNH(MediaQuery.of(context).size.height * 0.1),
+              SizedBox(height: MediaQuery.of(context).size.height * 0.1,),
               IconButton(onPressed: ()=> _checkLoginStatus(),
                   icon: const Icon(CupertinoIcons.arrow_right_circle_fill),
                   iconSize: 60, color: MyColors.mainTurquoise)

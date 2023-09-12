@@ -1,14 +1,16 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class LocationModel {
-  final double latitude;
-  final double longitude;
+  final double? latitude;
+  final double? longitude;
+  final String? name;
   final String? address;
 
   LocationModel({
-    required this.latitude,
-    required this.longitude,
-    this.address, // 'address' is now optional
+    this.latitude,
+    this.longitude,
+    this.name,
+    this.address,
   });
 
   factory LocationModel.fromJson(Map<String, dynamic> json) {
@@ -16,7 +18,8 @@ class LocationModel {
     return LocationModel(
       latitude: json['latitude'],
       longitude: json['longitude'],
-      address: json['address'], // No need for the null-aware operator '?'
+      name: json['name'],
+      address: json['address'],
     );
   }
 
@@ -25,11 +28,15 @@ class LocationModel {
     return {
       'latitude': latitude,
       'longitude': longitude,
-      'address': address, // 'address' can be null in the JSON
+      'name': name,
+      'address': address,
     };
   }
   
-  LatLng toLatLng(){
-    return LatLng(latitude, longitude);
+  LatLng? toLatLng(){
+    if (latitude != null && longitude != null){
+      return LatLng(latitude!, longitude!);
+    }
+    return null;
   }
 }

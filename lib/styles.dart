@@ -28,6 +28,13 @@ class MyButtonStyles {
       borderRadius: BorderRadius.circular(10),
     ),
   );
+  static ButtonStyle secondary = ElevatedButton.styleFrom(
+    elevation: 0,
+    backgroundColor: MyColors.mainTurquoise,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(10),
+    ),
+  );
 }
 
 class MyTextStyles {
@@ -51,37 +58,32 @@ class MyTextStyles {
   );
   static const TextStyle h1 = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.normal,
-    fontSize: 24,
-    letterSpacing: -0.04,
+    fontWeight: FontWeight.w500,
+    fontSize: 26,
     color: MyColors.black,
   );
   static const TextStyle h2 = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w400,
     fontSize: 20,
-    letterSpacing: -0.04,
     color: MyColors.black,
   );
   static const TextStyle h3 = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w300,
     fontSize: 18,
-    letterSpacing: -0.04,
-    color: MyColors.yellow,
+    color: MyColors.black,
   );
   static const TextStyle h4 = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w200,
     fontSize: 16,
-    letterSpacing: -0.04,
-    color: MyColors.red,
+    color: MyColors.black,
   );
   static const TextStyle body = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w100,
     fontSize: 14,
-    letterSpacing: 0.1,
     color: MyColors.grey,
   );
 
@@ -196,20 +198,6 @@ class Templates {
     keyboardType: keyboardType,
     decoration: locationInputDecoration(text, prefixIcon),
     onTap: onTap,
-  );
-
-  
-
-  static ElevatedButton selectButton(text, onPressed) => ElevatedButton(
-    style: ElevatedButton.styleFrom(
-      backgroundColor: MyColors.green,
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-    ),
-    onPressed: onPressed,
-    child: Text(text, style: MyTextStyles.button2),
   );
 
   static String uppercase(String text) {

@@ -1,4 +1,4 @@
-// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, avoid_init_to_null, sized_box_for_whitespace
+// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, avoid_init_to_null, sized_box_for_whitespace, avoid_unnecessary_containers
 
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
@@ -17,6 +17,12 @@ import '../services/safe_ride_api.dart';
 import '../styles.dart';
 import 'dart:developer';
 
+enum Modes {
+  waypointsSelection,
+  routeSelection,
+  navigation,
+}
+
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
   @override
@@ -25,31 +31,37 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
 
+  // Api services
   final safeRideApi = SafeRideApi();
   late GoogleMapsPlaces placesApi;
   late GoogleMapsGeolocation geolocationApi;
   late GoogleMapsGeocoding geocodingApi;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  late CameraPosition currentCameraPosition;
-
-  Future<RouteModel>? futureRoute;
-  RouteModel? route = null;
-  Position? currentPosition = null;
+  late Position currentPosition;
   LocationModel? origin = null;
-  List<LocationModel>? waypoints = [];
+  List<LocationModel> waypoints = [];
   LocationModel? destination = null;
+  RouteModel? route = null;
+
   List<LocationModel>? destinationSearchResults;
+  List<RouteModel>? routeOptions = [];
+  
   
   late Marker destinationMarker;
   Set<Marker> mapMarkers = {};
   Set<Polyline> mapPolylines = {};
 
+  var mode = Modes.waypointsSelection;
+
   // Flags
+  bool currentPositionAsOrigin = true;
   bool isComputingRoute = false;
   bool isLoading = true;
   bool modifyOrigin = false;
   bool modifyDestination = true;
+
+  late CameraPosition mapCameraPosition;
 
   // Controllers
   late GoogleMapController googleMapsController;
@@ -58,57 +70,76 @@ class _MapScreenState extends State<MapScreen> {
   DraggableScrollableController draggableScrollableController = DraggableScrollableController(); 
 
   // DraggableScrollableSheet parameters
-  final double dssMinChildSize = 0.1;
-  final double dssLocationPickerComponentSize = 0.38;
-  final double dssRouteSelectionComponentSize = 0.55;
-  List<double> dssSnapSizes = [0.38];
-  
+  double dssMinChildSize = 0.13;
+  late double dssInitialChildSize;
+  late List<double> dssSnapSizes;
+
+  // location settings
+  late StreamSubscription<Position> positionStream;
   
   @override
   initState() {
-    log('Initializing...');
     asyncInit();
     super.initState();
-    log('Initialized!');
   }
 
   asyncInit() async {
+    log('Initializing...');
+    await verifyLocationPermissions();
     await dotenv.load();
     placesApi = GoogleMapsPlaces(apiKey: dotenv.env['GOOGLE_MAPS_API_KEY']);
     geocodingApi = GoogleMapsGeocoding(apiKey: dotenv.env['GOOGLE_MAPS_API_KEY']);
     geolocationApi = GoogleMapsGeolocation(apiKey: dotenv.env['GOOGLE_MAPS_API_KEY']);
 
-    await setCurrentPositionAsOrigin();
+    positionStream = Geolocator.getPositionStream(
+      locationSettings: LocationSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 150,
+      ),
+    ).listen((Position position) {
+      currentPosition = position;
+      if(currentPositionAsOrigin){
+        log('setting new origin');
+        origin = LocationModel(
+          latitude: currentPosition.latitude,
+          longitude: currentPosition.longitude,
+        );
+      }
+      log('LOCATION UPDATED ${origin!.toLatLng().toString()}');
+      // db update
+      //locationUpdate();
+    });
 
-    currentCameraPosition = CameraPosition(
-      target: LatLng(origin!.latitude!, origin!.longitude!),
+    currentPosition = await Geolocator.getCurrentPosition();
+    origin = LocationModel(latitude: currentPosition.latitude, longitude: currentPosition.longitude);
+
+    mapCameraPosition = mapCameraPosition = CameraPosition(
+      target: origin!.toLatLng()!,
       zoom: 15,
     );
     isLoading = false;
+    
     updateTextInputs();
     setState(() {});
+    log('Initialized!');
   }
 
   @override
   void setState(VoidCallback fn) {
-    updateMarkers();
+    updateMap();
+    updateDraggableScrollableSheetSizes();
     super.setState(fn);
   }
+  
 
   @override
   void dispose() {
+    positionStream.cancel();
     googleMapsController.dispose();
     super.dispose();
   }
 
-
-  Future<void> requestRoute(LatLng origin, LatLng destination) async {
-    route = await safeRideApi.requestRoute(origin, destination);
-    log(route!.getLatLngPoints().toString());
-  }
-
-
-  Future<Position> getCurrentPosition() async {
+  Future<void> verifyLocationPermissions() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       await Geolocator.openLocationSettings();
@@ -123,13 +154,76 @@ class _MapScreenState extends State<MapScreen> {
     if (permission == LocationPermission.deniedForever) {
       return Future.error('Location permission is denied forever, we cannot request permission');
     }
-    return await Geolocator.getCurrentPosition();
   }
 
+  void updateDraggableScrollableSheetSizes(){
+    switch(mode) {
+      case Modes.waypointsSelection:
+        dssMinChildSize = 0.1;
+        dssInitialChildSize = 0.36;
+        dssSnapSizes = [0.36];
+        break; // The switch statement must be told to exit, or it will execute every case.
+      case Modes.routeSelection:
+        dssMinChildSize = 0.1;
+        dssInitialChildSize = 0.55;
+        dssSnapSizes = [0.55];
+        break;
+      case Modes.navigation:
+        dssMinChildSize = 0.13;
+        dssInitialChildSize = dssMinChildSize;
+        dssSnapSizes = [];
+        break;
+    }
+  }
 
-  Future<void> setCurrentPositionAsOrigin() async {
-    currentPosition = await getCurrentPosition();
-    origin = LocationModel(latitude: currentPosition!.latitude, longitude: currentPosition!.longitude);
+  void updateMapCameraPosition(){
+    switch(mode) {
+      case Modes.navigation:
+        mapCameraPosition = CameraPosition(
+          target: route!.origin.toLatLng()!,
+          zoom: 18,
+          tilt: 50,
+        );
+        break;
+      default:
+        mapCameraPosition = CameraPosition(
+          target: origin!.toLatLng()!,
+          zoom: 15,
+        );
+    }
+    googleMapsController.animateCamera(
+      CameraUpdate.newCameraPosition(mapCameraPosition),
+    );
+    
+  }
+
+  void startNavigation() {
+    if (route != null){
+      mode = Modes.navigation;
+      updateMapCameraPosition();
+      //Navigator.push(context, MaterialPageRoute(builder: (context) => NavigationScreen(route: route!)),);
+      log('STARTING NAVIGATION WITH THIS ROUTE!');
+      draggableScrollableController.animateTo(
+        dssMinChildSize,
+        duration: Duration(milliseconds : 100),
+        curve: Curves.linearToEaseOut,
+      );
+      setState(() { });
+    }
+  }
+  void exitNavigation() {
+    mode = Modes.waypointsSelection;
+    route = null;
+    clearDestination();
+    updateDraggableScrollableSheetSizes();
+    draggableScrollableController.animateTo(
+      dssMinChildSize,
+      duration: Duration(milliseconds : 100),
+      curve: Curves.linearToEaseOut,
+    );
+    updateMapCameraPosition();
+    log('EXITING NAVIGATION WITH THIS ROUTE!');
+    setState(() { });
   }
 
 
@@ -137,7 +231,6 @@ class _MapScreenState extends State<MapScreen> {
     var response = await geocodingApi.searchByLocation(
       Location(lat: latitude, lng: longitude)
     );
-    log(response.status);
     if (response.isOkay){
       // log(response.results.first.placeId);
       return LocationModel(
@@ -195,7 +288,7 @@ class _MapScreenState extends State<MapScreen> {
 
 
   void searchDestination(text) async {
-    if (text.length > 2){
+    if (text.length > 1){
       destinationSearchResults = await searchPlacesByText(text);
     }
     else{
@@ -208,26 +301,19 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> computeRoutes() async {
     if (origin != null && destination != null) {
       setState(() {isComputingRoute = true;});
-      route = await safeRideApi.requestRoute(
+      routeOptions = await safeRideApi.requestRoutes(
         origin!.toLatLng()!,
         destination!.toLatLng()!,
       );
-      mapPolylines = {
-        Polyline(
-          polylineId: PolylineId('route_0'),
-          color: Colors.blue,
-          width: 5,
-          points: route!.getLatLngPoints(),
-          jointType: JointType.round,
-        ),
-      };
-      dssSnapSizes = [dssRouteSelectionComponentSize];
+      mode = Modes.routeSelection;
+      updateMap();
+      updateTextInputs();
+      updateDraggableScrollableSheetSizes();
       draggableScrollableController.animateTo(
-        dssRouteSelectionComponentSize,
+        dssSnapSizes[0],
         duration: Duration(milliseconds : 100),
         curve: Curves.linearToEaseOut,
       );
-      updateTextInputs();
       setState(() {isComputingRoute = false;});
     }
     else {
@@ -239,22 +325,23 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> dropMarker(position) async {
-    route = null;
+    routeOptions = null;
     mapPolylines = {};
     if (modifyOrigin) {
       origin = LocationModel(latitude: position.latitude, longitude: position.longitude);
     } else if (modifyDestination) {
       destination = await fetchLocationByLatLng(position.latitude, position.longitude);
+      waypoints = [destination!];
     } else {
       modifyDestination = false;
       modifyOrigin = false;
     }
-    currentCameraPosition = CameraPosition(
+    mapCameraPosition = CameraPosition(
       target: LatLng(position.latitude, position.longitude),
-      zoom: currentCameraPosition.zoom,
+      zoom: mapCameraPosition.zoom,
     );
     googleMapsController.animateCamera(
-      CameraUpdate.newCameraPosition(currentCameraPosition),
+      CameraUpdate.newCameraPosition(mapCameraPosition),
     );
     showLocationDialog(
       LocationModel(
@@ -268,7 +355,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   clearDestination(){
-    route = null;
+    routeOptions = null;
     destination = null;
     waypoints = [];
     destinationSearchResults = null;
@@ -276,8 +363,8 @@ class _MapScreenState extends State<MapScreen> {
 
 
   updateTextInputs(){
-    var currentLatLng = LatLng(currentPosition!.latitude, currentPosition!.longitude);
-    if (origin!.toLatLng() == currentLatLng){
+    var currentLatLng = LatLng(currentPosition.latitude, currentPosition.longitude);
+    if (currentPositionAsOrigin){
       originInputController.text = "Mi ubicación actual";
     }
     else {
@@ -288,6 +375,27 @@ class _MapScreenState extends State<MapScreen> {
     }
     else {
       destinationInputController.text = destination?.address ??  "";
+    }
+  }
+
+  updateMap(){
+    updateMarkers();
+    updatePolylines();
+  }
+  updatePolylines(){
+    if (routeOptions == null || routeOptions!.isEmpty){
+      mapPolylines = {};
+    }
+    else {
+      mapPolylines = {
+        Polyline(
+          polylineId: PolylineId('route_0'),
+          color: Colors.blue,
+          width: 5,
+          points: routeOptions![0].getLatLngPoints(),
+          jointType: JointType.round,
+        ),
+      };
     }
   }
   updateMarkers(){
@@ -324,14 +432,14 @@ class _MapScreenState extends State<MapScreen> {
               myLocationEnabled: true,
               zoomControlsEnabled: true,
               zoomGesturesEnabled: true,
-              initialCameraPosition: currentCameraPosition,
+              initialCameraPosition: mapCameraPosition,
               onMapCreated: (controller) {
                 googleMapsController = controller;
               },
               markers: mapMarkers,
               polylines: mapPolylines,
               onTap: (position) {
-                if (route == null){
+                if (mode == Modes.waypointsSelection){
                   clearDestination();
                   updateTextInputs();
                   setState(() {});
@@ -351,12 +459,13 @@ class _MapScreenState extends State<MapScreen> {
             ),
             DraggableScrollableSheet(
               controller: draggableScrollableController,
-              initialChildSize: dssLocationPickerComponentSize,
+              initialChildSize: dssInitialChildSize,
               minChildSize: dssMinChildSize,
               snap: true,
               snapSizes: dssSnapSizes,
               builder: (context, scrollController) {
                 return Container(
+                  padding: EdgeInsets.only(right: 16.0, top: 16.0, left: 16.0),
                   decoration: BoxDecoration(
                     color: MyColors.white,
                     borderRadius: BorderRadius.only(
@@ -366,153 +475,19 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                   child: SingleChildScrollView(
                     controller: scrollController,
-                    child: Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 50,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: MyColors.lightGrey,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 50,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: MyColors.lightGrey,
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          SizedBox(height: 20),
-                          Column(
-                            children: [
-                              Text(
-                                '¿A dónde quieres ir?',
-                                style: MyTextStyles.h1,
-                              ),
-                              SizedBox(height: 20),
-                              Container(
-                                padding: EdgeInsets.symmetric(horizontal: 15, vertical: 15),
-                                decoration: BoxDecoration(
-                                  color: MyColors.lightGrey,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Expanded(
-                                      flex: 7,
-                                      child: Column(
-                                        children: [
-                                          TextField(
-                                            controller: originInputController,
-                                            style: MyTextStyles.inputTextStyle,
-                                            readOnly: true,
-                                            keyboardType: TextInputType.streetAddress,
-                                            textAlignVertical: TextAlignVertical.center,
-                                            decoration: Templates.locationInputDecoration(
-                                              "Origen",
-                                              Container(
-                                                padding: EdgeInsets.all(10),
-                                                height: 10,
-                                                child: Image.asset(
-                                                  'assets/thin-target.png',
-                                                  color: MyColors.mainTurquoise,
-                                                ),
-                                              ),
-                                            ),
-                                            onTap: allowOriginSelection,
-                                          ),
-                                          SizedBox(height: 10,),
-                                          TextField(
-                                            controller: destinationInputController,
-                                            style: MyTextStyles.inputTextStyle,
-                                            keyboardType: TextInputType.streetAddress,
-                                            textAlignVertical: TextAlignVertical.center,
-                                            decoration: Templates.locationInputDecoration(
-                                              "Destino",
-                                              Container(
-                                                padding: EdgeInsets.all(10),
-                                                height: 10,
-                                                child: Image.asset(
-                                                  'assets/market.png',
-                                                  color: MyColors.mainTurquoise,
-                                                ),
-                                              ),
-                                            ),
-                                            onTap: (){
-                                              draggableScrollableController.animateTo(
-                                                1,
-                                                duration: Duration(milliseconds : 300),
-                                                curve: Curves.linearToEaseOut,
-                                              );
-                                            },
-                                            onChanged: (text) {
-                                              searchDestination(text);
-                                            },
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    SizedBox(width: 10),
-                                    Expanded(
-                                      flex: 1,
-                                      child: IconButton(
-                                        icon: Icon(
-                                          CupertinoIcons.arrow_2_squarepath,
-                                          color: MyColors.darkGrey,
-                                          size: 30,
-                                        ),
-                                        onPressed: () {
-                                          if (origin != null && destination != null) {
-                                            // swaping origin and destination
-                                            final temp = origin;
-                                            origin = destination;
-                                            destination = temp;
-                                            updateTextInputs();
-                                            setState(() {});
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              SizedBox(height: 20),
-                              Container(
-                                height: 50,
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  style: MyButtonStyles.primary,
-                                  child: Text(
-                                    'BUSCAR RUTAS',
-                                    style: MyTextStyles.primaryButton,
-                                  ),
-                                  onPressed: () {
-                                    computeRoutes();
-                                  },
-                                ),
-                              ),
-                              SizedBox(height: 20),
-                              destinationSearchResults == null ? Container() : ListView.builder(
-                                physics: NeverScrollableScrollPhysics(),
-                                shrinkWrap: true,
-                                itemCount: destinationSearchResults!.length,
-                                itemBuilder: (context, index){
-                                  return placeResultListTile(destinationSearchResults![index]);
-                                },
-                              ),
-                              route == null ? Container() : routeOptionTile(route!),
-                              // FutureBuilder(
-                              //   future: futureRoute,
-                              //   builder: (context, AsyncSnapshot<RouteModel> snapshot){
-                              //     if (snapshot.connectionState == ConnectionState.waiting){
-                              //       return CircularProgressIndicator();
-                              //     }
-                              //     log(snapshot.data.toString());
-                              //     return routeOptionTile();
-                              //   },
-                              // ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                        SizedBox(height: 8),
+                        draggableScrollableSheetContent(),
+                      ],
                     ),
                   ),
                 );
@@ -529,7 +504,206 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget routeOptionTile(RouteModel route) {
+  Widget draggableScrollableSheetContent(){
+    if (mode != Modes.navigation){
+      return Column(
+        children: [
+          Text(
+            '¿A dónde quieres ir?',
+            style: MyTextStyles.h1,
+          ),
+          SizedBox(height: 20),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+            decoration: BoxDecoration(
+              color: MyColors.lightGrey,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(
+                  flex: 7,
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: originInputController,
+                        style: MyTextStyles.inputTextStyle,
+                        readOnly: true,
+                        keyboardType: TextInputType.streetAddress,
+                        textAlignVertical: TextAlignVertical.center,
+                        decoration: Templates.locationInputDecoration(
+                          "Origen",
+                          Container(
+                            padding: EdgeInsets.all(10),
+                            height: 10,
+                            child: Image.asset(
+                              'assets/thin-target.png',
+                              color: MyColors.mainTurquoise,
+                            ),
+                          ),
+                        ),
+                        onTap: allowOriginSelection,
+                      ),
+                      SizedBox(height: 10,),
+                      TextField(
+                        controller: destinationInputController,
+                        style: MyTextStyles.inputTextStyle,
+                        keyboardType: TextInputType.streetAddress,
+                        textAlignVertical: TextAlignVertical.center,
+                        decoration: Templates.locationInputDecoration(
+                          "Destino",
+                          Container(
+                            padding: EdgeInsets.all(10),
+                            height: 10,
+                            child: Image.asset(
+                              'assets/market.png',
+                              color: MyColors.mainTurquoise,
+                            ),
+                          ),
+                        ),
+                        onTap: (){
+                          draggableScrollableController.animateTo(
+                            1,
+                            duration: Duration(milliseconds : 300),
+                            curve: Curves.linearToEaseOut,
+                          );
+                        },
+                        onChanged: (text) {
+                          searchDestination(text);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  flex: 1,
+                  child: IconButton(
+                    icon: Icon(
+                      CupertinoIcons.arrow_2_squarepath,
+                      color: MyColors.darkGrey,
+                      size: 30,
+                    ),
+                    onPressed: () {
+                      if (origin != null && destination != null) {
+                        // swaping origin and destination
+                        final temp = origin;
+                        origin = destination;
+                        destination = temp;
+                        waypoints = [destination!];
+                        updateTextInputs();
+                        setState(() {});
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 20),
+          Container(
+            height: 50,
+            width: double.infinity,
+            child: ElevatedButton(
+              style: MyButtonStyles.primary,
+              child: Text(
+                'BUSCAR RUTAS',
+                style: MyTextStyles.primaryButton,
+              ),
+              onPressed: () {
+                computeRoutes();
+              },
+            ),
+          ),
+          SizedBox(height: 20),
+          dssComplementaryBottomContent(),
+        ],
+      );
+    }
+    else {
+      return Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                onPressed: exitNavigation,
+                iconSize: 60,
+                icon: Image.asset(
+                  'assets/cancel_icon.png',
+                  color: MyColors.red,
+                ),
+              ),
+              Column(
+                children: [
+                  Text('${route!.etaSeconds} mins', style: MyTextStyles.h1,),
+                  Text('${route!.distanceMeters} meters - eta time', style: MyTextStyles.h2,),
+                ],
+              ),
+              IconButton(
+                onPressed: (){},
+                iconSize: 60,
+                icon: Image.asset(
+                  'assets/alternative_routes_icon.png',
+                  color: MyColors.mainTurquoise,
+                ),
+              ),
+            ],
+          ),
+          Divider(thickness: 2, height: 20,),
+          dssComplementaryBottomContent(),          
+        ],
+      );
+    }
+  }
+
+  Widget dssComplementaryBottomContent(){
+    if (mode == Modes.waypointsSelection && destinationSearchResults != null){
+      return ListView.builder(
+        physics: NeverScrollableScrollPhysics(),
+        shrinkWrap: true,
+        itemCount: destinationSearchResults!.length,
+        itemBuilder: (context, index){
+          return placeResultListTile(destinationSearchResults![index]);
+        },
+      );
+    }
+    else if (mode == Modes.routeSelection && routeOptions != null){
+      return routeOptionTile(routeOptions![0]);
+    }
+    else if (mode == Modes.navigation){
+      waypoints = [destination!, destination!, destination!]; // FOR TESTING ONLY
+      return Container(
+        //color: MyColors.red,
+        height: 700, // ReorderableListView needs to be inside a Height Container, otherwise it rashes the app
+        child: ReorderableListView(
+          onReorder: (int oldIndex, int newIndex){
+            log('$oldIndex, $newIndex');
+          },
+          children: List.generate(
+            waypoints.length,
+            (index) => ListTile(
+              key: Key(index.toString()),
+              tileColor: MyColors.mainTurquoise,
+              title: Text('${waypoints[index].address}', style: MyTextStyles.h3,),
+              trailing: Icon(Icons.drag_handle_rounded),
+            ),
+          ),
+        ),
+      );
+    }
+    else {
+      return Container();
+    }
+  }
+
+  // Widget waypointTile(LocationModel location, String index){
+  //   return ; 
+  // }
+
+  Widget routeOptionTile(RouteModel routeOption) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 15, vertical: 15),
       decoration: BoxDecoration(
@@ -582,18 +756,19 @@ class _MapScreenState extends State<MapScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '${route.eatSeconds!~/60} mins',
+                  '${routeOption.etaSeconds!~/60} mins',
                   style: MyTextStyles.h1,
                 ),
                 Text(
-                  '${route.distanceMeters!/1000} Km',
+                  '${routeOption.distanceMeters!/1000} Km',
                   style: MyTextStyles.h2,
                 ),
                 ElevatedButton(
                   style: MyButtonStyles.primary,
                   child: Text('Iniciar Ruta', style: MyTextStyles.button2),
                   onPressed: (){
-                    log('STARTING NAVIGATION WITH THIS ROUTE!');
+                    route = routeOption;
+                    startNavigation();
                   },
                 ),
               ],
@@ -635,15 +810,24 @@ class _MapScreenState extends State<MapScreen> {
   Widget placeResultListTile(LocationModel place){
     return Container(
       padding: EdgeInsets.only(left: 10, top: 10, right: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(place.name!, style: MyTextStyles.h2, overflow: TextOverflow.ellipsis,),
-          Text(place.address!, style: MyTextStyles.h3, overflow: TextOverflow.ellipsis,),
-          // Text(place.latitude!.toString()),
-          // Text(place.longitude!.toString()),
-          Divider(thickness: 2, height: 20,),
-        ],
+      child: GestureDetector(
+        onTap: () {
+          FocusManager.instance.primaryFocus?.unfocus();//Closese the keyboard
+          destination = place;
+          waypoints = [destination!];
+          destinationSearchResults = null;
+          computeRoutes();
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(place.name!, style: MyTextStyles.h2, overflow: TextOverflow.ellipsis,),
+            Text(place.address!, style: MyTextStyles.h3, overflow: TextOverflow.ellipsis,),
+            // Text(place.latitude!.toString()),
+            // Text(place.longitude!.toString()),
+            Divider(thickness: 2, height: 20,),
+          ],
+        ),
       ),
     );
   }

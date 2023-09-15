@@ -2,17 +2,23 @@ import 'location_model.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class RouteModel {
-  final LocationModel origin;
-  final List<LocationModel> waypoints;
-  final int? distanceMeters;
-  final int? eatSeconds;
-  final Map<String, dynamic> pathGeojson;
+  LocationModel origin;
+  List<LocationModel> waypoints;
+  DateTime departureTime;
+  DateTime? arrivalTime;
+  int? distanceMeters;
+  int? etaSeconds;
+  List<LocationModel>? path;
+  Map<String, dynamic> pathGeojson;
 
   RouteModel({
     required this.origin,
     required this.waypoints,
+    required this.departureTime,
+    this.arrivalTime,
     this.distanceMeters,
-    this.eatSeconds,
+    this.etaSeconds,
+    this.path,
     required this.pathGeojson,
   });
 
@@ -21,10 +27,15 @@ class RouteModel {
     return RouteModel(
       origin: LocationModel.fromJson(json['origin']),
       waypoints: (json['waypoints'] as List)
-          .map((waypointJson) => LocationModel.fromJson(waypointJson))
-          .toList(),
+        .map((waypointJson) => LocationModel.fromJson(waypointJson))
+        .toList(),
+      departureTime: DateTime.parse(json['departure_time']),
+      arrivalTime: json['arrival_time'] != null ? DateTime.parse(json['arrival_time']) : null,
       distanceMeters: json['distance_meters'] ?? 0,
-      eatSeconds: json['eat_seconds'] ?? 0,
+      etaSeconds: json['eat_seconds'] ?? 0,
+      path: (json['path'] as List)
+        .map((locationJson) => LocationModel.fromJson(locationJson))
+        .toList(),
       pathGeojson: json['path_geojson'] ?? {},
     );
   }
@@ -34,8 +45,11 @@ class RouteModel {
     return {
       'origin': origin.toJson(),
       'waypoints': waypoints.map((waypoint) => waypoint.toJson()).toList(),
+      'departureTime': "",
+      'arrivalTime': "",
       'distance_meters': distanceMeters,
-      'eat_seconds': eatSeconds,
+      'eat_seconds': etaSeconds,
+      // 'path': ,
       'path_geojson': pathGeojson,
     };
   }

@@ -58,7 +58,7 @@ class MyTextStyles {
   );
   static const TextStyle h1 = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w600,
     fontSize: 26,
     color: MyColors.black,
   );
@@ -76,13 +76,13 @@ class MyTextStyles {
   );
   static const TextStyle h4 = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.w200,
+    fontWeight: FontWeight.w300,
     fontSize: 16,
     color: MyColors.black,
   );
   static const TextStyle body = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.w100,
+    fontWeight: FontWeight.w200,
     fontSize: 14,
     color: MyColors.grey,
   );

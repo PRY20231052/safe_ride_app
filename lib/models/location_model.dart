@@ -1,14 +1,14 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class LocationModel {
-  final double? latitude;
-  final double? longitude;
+  final double latitude;
+  final double longitude;
   final String? name;
   final String? address;
 
   LocationModel({
-    this.latitude,
-    this.longitude,
+    required this.latitude,
+    required this.longitude,
     this.name,
     this.address,
   });
@@ -33,10 +33,7 @@ class LocationModel {
     };
   }
   
-  LatLng? toLatLng(){
-    if (latitude != null && longitude != null){
-      return LatLng(latitude!, longitude!);
-    }
-    return null;
+  LatLng toLatLng(){
+    return LatLng(latitude, longitude);
   }
 }

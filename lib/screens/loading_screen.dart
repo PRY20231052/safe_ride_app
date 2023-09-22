@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_const_constructors
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../styles.dart';
@@ -34,11 +36,11 @@ class _LoadingScreenState extends State<LoadingScreen> {
             crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('Safe\nRide', style: MyTextStyles.head),
+              Text('Safe\nRide', style: MyTextStyles.head),
               SizedBox(height: MediaQuery.of(context).size.height * 0.1,),
               IconButton(onPressed: ()=> _checkLoginStatus(),
                   icon: const Icon(CupertinoIcons.arrow_right_circle_fill),
-                  iconSize: 60, color: MyColors.mainTurquoise)
+                  iconSize: 60, color: MyColors.mainBlue)
             ],
           )
       ),

@@ -1,10 +1,11 @@
-// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables
+// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, avoid_unnecessary_containers
 
 import 'package:flutter/material.dart';
 import 'package:safe_ride_app/styles.dart';
 
 class MyLoadingScreen extends StatelessWidget {
 
+  Color barrierColor;
   Color backgroundColor;
   double backgroundOpacity;
   Color indicatorColor;
@@ -12,9 +13,10 @@ class MyLoadingScreen extends StatelessWidget {
 
   MyLoadingScreen({
     super.key,
+    this.barrierColor = Colors.white,
     this.backgroundColor = Colors.white,
     this.backgroundOpacity = 1.0,
-    this.indicatorColor = MyColors.mainTurquoise,
+    this.indicatorColor = MyColors.mainBlue,
     this.label = "",
   });
 
@@ -23,7 +25,7 @@ class MyLoadingScreen extends StatelessWidget {
     return Stack(
       children: [
         Opacity(
-          opacity: 0.8,
+          opacity: backgroundOpacity,
           child: ModalBarrier(
             color: backgroundColor,
             dismissible: false,
@@ -33,9 +35,21 @@ class MyLoadingScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Center(
-              child: CircularProgressIndicator(color: indicatorColor,),
+              child: Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: MyColors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(color: indicatorColor,),
+                    SizedBox(height: 10,),
+                    Text(label, style: MyTextStyles.h2,),
+                  ],
+                ),
+              ),
             ),
-            Text(label),
           ],
         ),
       ],

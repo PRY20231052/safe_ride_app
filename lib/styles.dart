@@ -4,13 +4,14 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 class MyColors {
-  static const Color mainTurquoise = Color(0xff69D3B9);
+  static const Color mainBlue = Color(0xff4BA1EE);
   static const Color secondary = Color(0xff1d1d1b);
 
-  static const Color green = Color(0xff21c25f);
+  static const Color mildBlue = Color(0xff4080CB);
+  static const Color coldBlue = Color(0xff3268A8);
   static const Color red = Color(0xffE55959);
-  static const Color yellow = Color(0xffE9C546);
-  static const Color blue = Color(0xff3893E8);
+  static const Color yellow = Color(0xffF2CE50);
+  static const Color turquoise = Color(0xff48CBAB);
   static const Color purple = Color(0xffB382D1);
 
   static const Color black = Color(0xff000000);
@@ -23,14 +24,14 @@ class MyColors {
 
 class MyButtonStyles {
   static ButtonStyle primary = ElevatedButton.styleFrom(
-    backgroundColor: MyColors.mainTurquoise,
+    backgroundColor: MyColors.mainBlue,
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(10),
     ),
   );
   static ButtonStyle secondary = ElevatedButton.styleFrom(
     elevation: 0,
-    backgroundColor: MyColors.mainTurquoise,
+    backgroundColor: MyColors.mainBlue,
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(10),
     ),
@@ -46,7 +47,7 @@ class MyTextStyles {
     fontWeight: FontWeight.bold,
     fontSize: 64,
     letterSpacing: 0.8,
-    color: MyColors.mainTurquoise,
+    color: MyColors.mainBlue,
   );
 
   static const TextStyle title = TextStyle(
@@ -54,7 +55,7 @@ class MyTextStyles {
     fontWeight: FontWeight.bold,
     fontSize: 24,
     letterSpacing: 0.18,
-    color: MyColors.mainTurquoise,
+    color: MyColors.mainBlue,
   );
   static const TextStyle h1 = TextStyle(
     fontFamily: fontName,

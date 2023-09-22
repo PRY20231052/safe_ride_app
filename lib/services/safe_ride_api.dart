@@ -42,7 +42,8 @@ class SafeRideApi {
       Uri.parse('${baseURL}/routes/'),
       headers: {
         'Content-type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'charset': 'utf-8',
       },
       body: jsonEncode({
         "origin": {
@@ -58,7 +59,7 @@ class SafeRideApi {
       })
     );
     if (response.statusCode == 201) {
-      RouteModel? route = RouteModel.fromJson(jsonDecode(response.body));
+      RouteModel? route = RouteModel.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
       return [route];
     }
     return null;

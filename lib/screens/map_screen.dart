@@ -1,4 +1,4 @@
-// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, avoid_init_to_null, sized_box_for_whitespace, avoid_unnecessary_containers
+// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, avoid_init_to_null, sized_box_for_whitespace, avoid_unnecessary_containers, unnecessary_brace_in_string_interps
 
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
@@ -13,9 +13,13 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:safe_ride_app/models/location_model.dart';
 import 'package:safe_ride_app/models/route_model.dart';
 import 'package:safe_ride_app/my_widgets/my_loading_screen.dart';
+import 'package:safe_ride_app/my_widgets/navigation_overlay.dart';
+
 import '../services/safe_ride_api.dart';
 import '../styles.dart';
 import 'dart:developer';
+
+import '../utils.dart';
 
 enum Modes {
   waypointsSelection,
@@ -31,52 +35,67 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
 
-  // Api services
+  // API SERVICES
   final safeRideApi = SafeRideApi();
   late GoogleMapsPlaces placesApi;
   late GoogleMapsGeolocation geolocationApi;
   late GoogleMapsGeocoding geocodingApi;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+
+  var mode = Modes.waypointsSelection;
+
+
+  // WAYPOING PICKING VARIABLES
   late Position currentPosition;
   LocationModel? origin = null;
   List<LocationModel> waypoints = [];
   LocationModel? destination = null;
   RouteModel? route = null;
-
   List<LocationModel>? destinationSearchResults;
+
+
+  // ROUTE PICKING VARIABLES
   List<RouteModel>? routeOptions = [];
+
+
+  // NAVIGATION VARIABLES
+  int navPathCurrentIndex = 0;
+  bool isInsideNodeRadius = false;
   
-  
+
+  // MAP VARIABLES
   late Marker destinationMarker;
   Set<Marker> mapMarkers = {};
   Set<Polyline> mapPolylines = {};
+  late CameraPosition mapCameraPosition;
 
-  var mode = Modes.waypointsSelection;
 
-  // Flags
+  // FLAGS
   bool currentPositionAsOrigin = true;
   bool isComputingRoute = false;
   bool isLoading = true;
   bool modifyOrigin = false;
   bool modifyDestination = true;
+  
 
-  late CameraPosition mapCameraPosition;
-
-  // Controllers
+  // CONTROLLERS
   late GoogleMapController googleMapsController;
   TextEditingController originInputController = TextEditingController();
   TextEditingController destinationInputController = TextEditingController();
   DraggableScrollableController draggableScrollableController = DraggableScrollableController(); 
+
 
   // DraggableScrollableSheet parameters
   double dssMinChildSize = 0.13;
   late double dssInitialChildSize;
   late List<double> dssSnapSizes;
 
+
   // location settings
   late StreamSubscription<Position> positionStream;
   
+
   @override
   initState() {
     asyncInit();
@@ -94,18 +113,22 @@ class _MapScreenState extends State<MapScreen> {
     positionStream = Geolocator.getPositionStream(
       locationSettings: LocationSettings(
         accuracy: LocationAccuracy.best,
-        distanceFilter: 150,
+        distanceFilter: 0,
       ),
     ).listen((Position position) {
       currentPosition = position;
-      if(currentPositionAsOrigin){
-        log('setting new origin');
-        origin = LocationModel(
-          latitude: currentPosition.latitude,
-          longitude: currentPosition.longitude,
-        );
+      log('CURRENT POSITION UPDATED ${[currentPosition.latitude, currentPosition.longitude].toString()}');
+      if (mode == Modes.navigation){
+        handleNavigationProgress();
+      } else {
+        if(currentPositionAsOrigin){
+          log('setting new origin');
+          origin = LocationModel(
+            latitude: currentPosition.latitude,
+            longitude: currentPosition.longitude,
+          );
+        }
       }
-      log('LOCATION UPDATED ${origin!.toLatLng().toString()}');
       // db update
       //locationUpdate();
     });
@@ -114,7 +137,7 @@ class _MapScreenState extends State<MapScreen> {
     origin = LocationModel(latitude: currentPosition.latitude, longitude: currentPosition.longitude);
 
     mapCameraPosition = mapCameraPosition = CameraPosition(
-      target: origin!.toLatLng()!,
+      target: origin!.toLatLng(),
       zoom: 15,
     );
     isLoading = false;
@@ -160,8 +183,8 @@ class _MapScreenState extends State<MapScreen> {
     switch(mode) {
       case Modes.waypointsSelection:
         dssMinChildSize = 0.1;
-        dssInitialChildSize = 0.36;
-        dssSnapSizes = [0.36];
+        dssInitialChildSize = 0.30;
+        dssSnapSizes = [0.30];
         break; // The switch statement must be told to exit, or it will execute every case.
       case Modes.routeSelection:
         dssMinChildSize = 0.1;
@@ -176,33 +199,25 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void updateMapCameraPosition(){
-    switch(mode) {
-      case Modes.navigation:
-        mapCameraPosition = CameraPosition(
-          target: route!.origin.toLatLng()!,
-          zoom: 18,
-          tilt: 50,
-        );
-        break;
-      default:
-        mapCameraPosition = CameraPosition(
-          target: origin!.toLatLng()!,
-          zoom: 15,
-        );
-    }
+  void updateMapCameraPosition({LatLng? target}){
+    // ??= means in if target is null then assign...
+    target ??= mode == Modes.navigation ? route!.origin.toLatLng() : origin!.toLatLng();
+    mapCameraPosition = CameraPosition(
+      target: target,
+      zoom: mode == Modes.navigation ? 18 : 15,
+      tilt: mode == Modes.navigation ? 50 : 0.0,
+    );
     googleMapsController.animateCamera(
       CameraUpdate.newCameraPosition(mapCameraPosition),
     );
-    
   }
 
   void startNavigation() {
     if (route != null){
       mode = Modes.navigation;
+      navPathCurrentIndex = 0;
       updateMapCameraPosition();
       //Navigator.push(context, MaterialPageRoute(builder: (context) => NavigationScreen(route: route!)),);
-      log('STARTING NAVIGATION WITH THIS ROUTE!');
       draggableScrollableController.animateTo(
         dssMinChildSize,
         duration: Duration(milliseconds : 100),
@@ -211,6 +226,45 @@ class _MapScreenState extends State<MapScreen> {
       setState(() { });
     }
   }
+
+  void handleNavigationProgress(){
+    double nodeThresholdRadius = 5;
+    bool onPath = isLocationOnPath(
+      LocationModel(latitude: currentPosition.latitude, longitude: currentPosition.longitude),
+      mapPolylines.first,
+      10.0,
+    );
+    onPath ? log('On path :)') : log('Deviated from path!');
+    if(!onPath){
+      // Re-compute a new route from current position to the rest of waypoints
+
+    } else {
+      log('CURRENT INDEX: $navPathCurrentIndex/${route!.pathNodes.length}');
+      for (var i = navPathCurrentIndex + 1; i < route!.pathNodes.length; i++){
+
+        double distance = computeDistanceBetweenPoints(
+          LatLng(currentPosition.latitude, currentPosition.longitude),
+          LatLng(route!.pathNodes[i].latitude, route!.pathNodes[i].longitude)
+        );
+        i == 1 ? log('Distance to next node: $distance') : null;
+        // if we go pass the node's threshold radius
+        if (!isInsideNodeRadius && distance <= nodeThresholdRadius){
+          isInsideNodeRadius = true;
+          // we have landed into the node so we have to now go to the next step
+          log('Arrived to node $i/${route!.pathNodes.length}  Distance to center of node: $distance');
+          break;
+        }
+        // for the inmidiate next node, check if we are leaving the node radius to update the current node status
+        if (i == navPathCurrentIndex+1 && isInsideNodeRadius && distance > nodeThresholdRadius){
+          isInsideNodeRadius = false;
+          navPathCurrentIndex = i;
+          log('Leaving node $i Distance to center of node: $distance');
+          break;
+        }
+      }
+    }
+  }
+  
   void exitNavigation() {
     mode = Modes.waypointsSelection;
     route = null;
@@ -254,7 +308,7 @@ class _MapScreenState extends State<MapScreen> {
     var response = await placesApi.autocomplete(
       textInput,
       sessionToken: sessionToken,
-      location: Location(lat: origin!.latitude!, lng: origin!.longitude!),
+      location: Location(lat: origin!.latitude, lng: origin!.longitude),
       radius: 5000, // in meters
     );
 
@@ -268,8 +322,8 @@ class _MapScreenState extends State<MapScreen> {
         //if (prediction.placeId == null) return;
         placesResults.add(
           LocationModel(
-            latitude: details.result.geometry?.location.lat,
-            longitude: details.result.geometry?.location.lng,
+            latitude: details.result.geometry!.location.lat,
+            longitude: details.result.geometry!.location.lng,
             name: prediction.description,
             address: details.result.formattedAddress,
           ),
@@ -297,13 +351,19 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {});
   }
 
+  Future<void> computeAlternativeRoutes() async {
+    handleNavigationProgress();
+    // for (var edge in route!.pathEdges){
+    //   log(edge.attributes.toString());
+    // }
+  }
 
   Future<void> computeRoutes() async {
     if (origin != null && destination != null) {
       setState(() {isComputingRoute = true;});
       routeOptions = await safeRideApi.requestRoutes(
-        origin!.toLatLng()!,
-        destination!.toLatLng()!,
+        origin!.toLatLng(),
+        destination!.toLatLng(),
       );
       mode = Modes.routeSelection;
       updateMap();
@@ -336,13 +396,7 @@ class _MapScreenState extends State<MapScreen> {
       modifyDestination = false;
       modifyOrigin = false;
     }
-    mapCameraPosition = CameraPosition(
-      target: LatLng(position.latitude, position.longitude),
-      zoom: mapCameraPosition.zoom,
-    );
-    googleMapsController.animateCamera(
-      CameraUpdate.newCameraPosition(mapCameraPosition),
-    );
+    updateMapCameraPosition(target: LatLng(position.latitude, position.longitude));
     showLocationDialog(
       LocationModel(
         latitude: destination!.latitude,
@@ -359,6 +413,7 @@ class _MapScreenState extends State<MapScreen> {
     destination = null;
     waypoints = [];
     destinationSearchResults = null;
+    updateTextInputs();
   }
 
 
@@ -390,10 +445,11 @@ class _MapScreenState extends State<MapScreen> {
       mapPolylines = {
         Polyline(
           polylineId: PolylineId('route_0'),
-          color: Colors.blue,
-          width: 5,
+          color: MyColors.purple,
+          width: mode == Modes.navigation ? 15 : 5,
           points: routeOptions![0].getLatLngPoints(),
           jointType: JointType.round,
+          endCap: Cap.roundCap,
         ),
       };
     }
@@ -403,7 +459,7 @@ class _MapScreenState extends State<MapScreen> {
     if(destination != null){
       destinationMarker = Marker(
         markerId: MarkerId('destination'),
-        position: destination!.toLatLng()!,
+        position: destination!.toLatLng(),
         icon: BitmapDescriptor.defaultMarker,
         onTap: onMarkerTapped,
       );
@@ -426,6 +482,7 @@ class _MapScreenState extends State<MapScreen> {
       key: _scaffoldKey,
       body: SafeArea(
         child: Stack(
+          alignment: AlignmentDirectional.topCenter,
           children: [
             GoogleMap(
               myLocationButtonEnabled: true,
@@ -441,7 +498,6 @@ class _MapScreenState extends State<MapScreen> {
               onTap: (position) {
                 if (mode == Modes.waypointsSelection){
                   clearDestination();
-                  updateTextInputs();
                   setState(() {});
                 }
               },
@@ -456,6 +512,14 @@ class _MapScreenState extends State<MapScreen> {
                 );
                 //log(position.toString());
               },
+            ),
+            mode != Modes.navigation ? Container() : NavigationOverlay(
+              route: route!,
+              routeCurrentIndex: navPathCurrentIndex,
+              polyline: mapPolylines.first,
+              mainInstruction: route!.pathEdges[navPathCurrentIndex+1].attributes['name'] ?? 'Calle Desconocida',
+              mainInstructionImg: Image.asset('assets/turn_left.png', color: MyColors.white,),
+              showFollowUpInstruction: false,
             ),
             DraggableScrollableSheet(
               controller: draggableScrollableController,
@@ -540,7 +604,7 @@ class _MapScreenState extends State<MapScreen> {
                             height: 10,
                             child: Image.asset(
                               'assets/thin-target.png',
-                              color: MyColors.mainTurquoise,
+                              color: MyColors.mainBlue,
                             ),
                           ),
                         ),
@@ -559,7 +623,7 @@ class _MapScreenState extends State<MapScreen> {
                             height: 10,
                             child: Image.asset(
                               'assets/market.png',
-                              color: MyColors.mainTurquoise,
+                              color: MyColors.mainBlue,
                             ),
                           ),
                         ),
@@ -603,21 +667,21 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
           SizedBox(height: 20),
-          Container(
-            height: 50,
-            width: double.infinity,
-            child: ElevatedButton(
-              style: MyButtonStyles.primary,
-              child: Text(
-                'BUSCAR RUTAS',
-                style: MyTextStyles.primaryButton,
-              ),
-              onPressed: () {
-                computeRoutes();
-              },
-            ),
-          ),
-          SizedBox(height: 20),
+          // Container(
+          //   height: 50,
+          //   width: double.infinity,
+          //   child: ElevatedButton(
+          //     style: MyButtonStyles.primary,
+          //     child: Text(
+          //       'BUSCAR RUTAS',
+          //       style: MyTextStyles.primaryButton,
+          //     ),
+          //     onPressed: () {
+          //       computeRoutes();
+          //     },
+          //   ),
+          // ),
+          // SizedBox(height: 20),
           dssComplementaryBottomContent(),
         ],
       );
@@ -638,16 +702,16 @@ class _MapScreenState extends State<MapScreen> {
               ),
               Column(
                 children: [
-                  Text('${route!.etaSeconds} mins', style: MyTextStyles.h1,),
-                  Text('${route!.distanceMeters} meters - eta time', style: MyTextStyles.h2,),
+                  Text('${(route!.etaSeconds/60).toStringAsFixed(0)} mins', style: MyTextStyles.h1,),
+                  Text('${(route!.distanceMeters/1000).toStringAsFixed(1)} km - eta time', style: MyTextStyles.h2,),
                 ],
               ),
               IconButton(
-                onPressed: (){},
+                onPressed: computeAlternativeRoutes,
                 iconSize: 60,
                 icon: Image.asset(
                   'assets/alternative_routes_icon.png',
-                  color: MyColors.mainTurquoise,
+                  color: MyColors.mainBlue,
                 ),
               ),
             ],
@@ -658,6 +722,7 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
   }
+
 
   Widget dssComplementaryBottomContent(){
     if (mode == Modes.waypointsSelection && destinationSearchResults != null){
@@ -686,7 +751,7 @@ class _MapScreenState extends State<MapScreen> {
             waypoints.length,
             (index) => ListTile(
               key: Key(index.toString()),
-              tileColor: MyColors.mainTurquoise,
+              tileColor: MyColors.mainBlue,
               title: Text('${waypoints[index].address}', style: MyTextStyles.h3,),
               trailing: Icon(Icons.drag_handle_rounded),
             ),
@@ -722,27 +787,23 @@ class _MapScreenState extends State<MapScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Ruta más óptima',
-                  style:TextStyle(
+                  'Ruta óptima',
+                  style: TextStyle(
                     fontFamily: MyTextStyles.fontName,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: FontWeight.w500,
                     fontSize: 20,
-                    color: MyColors.blue,
+                    color: MyColors.turquoise,
                   ),
                 ),
                 SizedBox(height: 15,),
-                Container(
-                  height: 10,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: MyColors.blue,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                routeInfoGraphBar(
+                  width: 200,
+                  route: routeOption,
                 ),
                 SizedBox(height: 10,),
                 Row(
                   children: [
-                    routeTag(Icons.directions_bike, "Ciclovía", MyColors.blue),
+                    routeTag(Icons.directions_bike, "Ciclovía", MyColors.turquoise),
                     SizedBox(width: 8),
                     routeTag(CupertinoIcons.car, "Autopista", MyColors.yellow),
                   ],
@@ -756,13 +817,14 @@ class _MapScreenState extends State<MapScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '${routeOption.etaSeconds!~/60} mins',
+                  '${(routeOption.etaSeconds/60).toStringAsFixed(0)} mins',
                   style: MyTextStyles.h1,
                 ),
                 Text(
-                  '${routeOption.distanceMeters!/1000} Km',
+                  '${(routeOption.distanceMeters/1000).toStringAsFixed(1)} km',
                   style: MyTextStyles.h2,
                 ),
+                SizedBox(height: 10,),
                 ElevatedButton(
                   style: MyButtonStyles.primary,
                   child: Text('Iniciar Ruta', style: MyTextStyles.button2),
@@ -775,6 +837,33 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ), 
         ],
+      ),
+    );
+  }
+
+  Widget routeInfoGraphBar({required double width, required RouteModel route, double cornersRadius = 12}){
+    
+    // ATTEMPT TO ELIMINATE THOSE WHITE LINES IN BETWEEN
+    // var segments;
+    // var currCyclewayLevel;
+    // for (var i = 0; i < route.pathEdges.length; i++) {
+    //   route.pathEdges[i].attributes['cycleway_level'];
+    // }
+
+    return Row(
+      children: List.generate(
+        route.pathEdges.length,
+        (index) => Container(
+          height: 12,
+          width: route.pathEdges[index].attributes['length']/route.distanceMeters*width,
+          decoration: BoxDecoration(
+            color: route.pathEdges[index].attributes['cycleway_level'] == '2' ? MyColors.turquoise : MyColors.yellow,
+            borderRadius: 
+              index == 0 ? BorderRadius.only(topLeft: Radius.circular(cornersRadius), bottomLeft: Radius.circular(cornersRadius)) :
+              index == route.pathEdges.length-1 ? BorderRadius.only(topRight: Radius.circular(cornersRadius), bottomRight: Radius.circular(cornersRadius)) :
+              BorderRadius.zero
+          ),
+        ),
       ),
     );
   }

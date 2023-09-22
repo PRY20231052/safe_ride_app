@@ -1,3 +1,5 @@
+import 'package:safe_ride_app/models/edge_model.dart';
+
 import 'location_model.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -6,9 +8,10 @@ class RouteModel {
   List<LocationModel> waypoints;
   DateTime departureTime;
   DateTime? arrivalTime;
-  int? distanceMeters;
-  int? etaSeconds;
-  List<LocationModel>? path;
+  double distanceMeters;
+  double etaSeconds;
+  List<LocationModel> pathNodes;
+  List<EdgeModel> pathEdges;
   Map<String, dynamic> pathGeojson;
 
   RouteModel({
@@ -16,9 +19,10 @@ class RouteModel {
     required this.waypoints,
     required this.departureTime,
     this.arrivalTime,
-    this.distanceMeters,
-    this.etaSeconds,
-    this.path,
+    required this.distanceMeters,
+    required this.etaSeconds,
+    required this.pathNodes,
+    required this.pathEdges,
     required this.pathGeojson,
   });
 
@@ -31,10 +35,13 @@ class RouteModel {
         .toList(),
       departureTime: DateTime.parse(json['departure_time']),
       arrivalTime: json['arrival_time'] != null ? DateTime.parse(json['arrival_time']) : null,
-      distanceMeters: json['distance_meters'] ?? 0,
-      etaSeconds: json['eat_seconds'] ?? 0,
-      path: (json['path'] as List)
+      distanceMeters: json['distance_meters'] ?? 0.0,
+      etaSeconds: json['eta_seconds'] ?? 0.0,
+      pathNodes: (json['path_nodes'] as List)
         .map((locationJson) => LocationModel.fromJson(locationJson))
+        .toList(),
+      pathEdges: (json['path_edges'] as List)
+        .map((edgeJson) => EdgeModel.fromJson(edgeJson))
         .toList(),
       pathGeojson: json['path_geojson'] ?? {},
     );
@@ -49,7 +56,8 @@ class RouteModel {
       'arrivalTime': "",
       'distance_meters': distanceMeters,
       'eat_seconds': etaSeconds,
-      // 'path': ,
+      'path_nodes': pathNodes.map((node) => node.toJson()).toList(),
+      'path_edges': pathEdges.map((edge) => edge.toJson()).toList(),
       'path_geojson': pathGeojson,
     };
   }

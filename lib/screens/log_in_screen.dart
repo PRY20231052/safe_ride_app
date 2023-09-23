@@ -64,7 +64,7 @@ class _LogInScreenState extends State<LogInScreen> {
                             style: MyButtonStyles.primary,
                             child: Text('Login', style: MyTextStyles.primaryButton,),
                             onPressed: () {
-                              Navigator.push(context, CupertinoPageRoute(builder: (context) => const MapScreen()));
+                              Navigator.push(context, CupertinoPageRoute(builder: (context) => MapScreen()));
                             },
                           ),
                         ),

@@ -8,8 +8,8 @@ import 'dart:developer';
 
 
 class SafeRideApi {
-  String baseURL = "http://10.0.2.2:8000/api";
-  // String baseURL = "https://saferide-api.onrender.com/api";
+  final String baseURL = "http://10.0.2.2:8000/api";
+  // final String baseURL = "https://saferide-api.onrender.com/api";
 
   Future<RouteModel?> requestRoute(LatLng origin, LatLng destination) async {
     var response = await http.post(

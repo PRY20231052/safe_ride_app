@@ -1,15 +1,19 @@
 // ignore_for_file: avoid_unnecessary_containers, prefer_const_constructors, must_be_immutable, prefer_const_literals_to_create_immutables
 
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:safe_ride_app/models/route_model.dart';
+import 'package:safe_ride_app/providers/navigation_provider.dart';
 import '../styles.dart';
 
 class NavigationOverlay extends StatelessWidget {
-  RouteModel route;
-  int routeCurrentIndex;
-  Polyline polyline;
-  String mainInstruction;
+
+  late NavigationProvider readNavigationProv;
+  late NavigationProvider watchNavigationProv;
+
   Widget mainInstructionImg;
   bool showFollowUpInstruction;
   String? followUpInstruction;
@@ -20,10 +24,6 @@ class NavigationOverlay extends StatelessWidget {
 
   NavigationOverlay({
     super.key,
-    required this.route,
-    required this.routeCurrentIndex,
-    required this.polyline,
-    required this.mainInstruction,
     required this.mainInstructionImg,
     this.showFollowUpInstruction = false,
     this.followUpInstruction,
@@ -35,6 +35,9 @@ class NavigationOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    readNavigationProv = context.read<NavigationProvider>();
+    watchNavigationProv = context.watch<NavigationProvider>();
+
     return Container(
       padding: EdgeInsets.all(15),
       child: Column(
@@ -57,7 +60,7 @@ class NavigationOverlay extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    route.pathEdges[routeCurrentIndex].attributes['name'],
+                    watchNavigationProv.route!.pathEdges[watchNavigationProv.pathCurrentIndex].attributes['name'] ?? 'Calle Desconocida',
                     style: TextStyle(
                       fontFamily: MyTextStyles.fontName,
                       fontWeight: FontWeight.w500,
@@ -108,7 +111,7 @@ class NavigationOverlay extends StatelessWidget {
                     flex: 7,
                     child: Container(
                       child: Text(
-                        mainInstruction,
+                        watchNavigationProv.route!.pathEdges[watchNavigationProv.pathCurrentIndex+1].attributes['name'] ?? 'Calle Desconocida',
                         style: TextStyle(
                           fontFamily: MyTextStyles.fontName,
                           fontWeight: FontWeight.w600,

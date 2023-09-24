@@ -1,8 +1,9 @@
-// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, avoid_init_to_null, sized_box_for_whitespace, avoid_unnecessary_containers, unnecessary_brace_in_string_interps, prefer_is_empty
+// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, avoid_init_to_null, sized_box_for_whitespace, avoid_unnecessary_containers, unnecessary_brace_in_string_interps, prefer_is_empty, use_build_context_synchronously
 
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:safe_ride_app/models/location_model.dart';
 import 'package:safe_ride_app/models/route_model.dart';
@@ -22,8 +23,6 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
 
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-
   late MapProvider watchMapProv;
   late MapProvider readMapProv;
   late NavigationProvider watchNavigationProv;
@@ -32,6 +31,12 @@ class _MapScreenState extends State<MapScreen> {
   // FLAGS
   bool modifyOrigin = false;
   bool modifyDestination = true;
+
+  // CONTROLLERS
+  late GoogleMapController googleMapsController;
+  TextEditingController originInputController = TextEditingController();
+  TextEditingController destinationInputController = TextEditingController();
+  DraggableScrollableController draggableSheetController = DraggableScrollableController();
 
   // DraggableScrollableSheet parameters
   double dssMinChildSize = 0.1;
@@ -45,13 +50,17 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> asyncInit() async {
+    log('Initializing...');
     await Provider.of<MapProvider>(context, listen: false).initialize();
+    await Provider.of<NavigationProvider>(context, listen: false).initialize();
+    updateTextInputs();
+    log('Initialized!');
   }
   
   @override
   void dispose() {
-    readMapProv.positionStream.cancel();
-    readMapProv.googleMapsController.dispose();
+    readNavigationProv.positionStream.cancel();
+    googleMapsController.dispose();
     super.dispose();
   }
 
@@ -75,10 +84,30 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  Future<void> computeAlternativeRoutes() async {
-    // for (var edge in route!.pathEdges){
-    //   log(edge.attributes.toString());
-    // }
+  void updateMapCameraPosition({LatLng? target}){
+    // ??= means if target is null then assign...
+    target ??= watchMapProv.mode == Modes.navigation ? readNavigationProv.route!.origin.toLatLng() : readMapProv.origin!.toLatLng();
+    googleMapsController.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: target,
+          zoom: readMapProv.mode == Modes.navigation ? 18 : 15,
+          tilt: readMapProv.mode == Modes.navigation ? 50 : 0.0,
+        ),
+      ),
+    );
+  }
+
+  updateTextInputs(){
+    LatLng currentLatLng = LatLng(readMapProv.currentPosition.latitude, readMapProv.currentPosition.longitude);
+    originInputController.text = readMapProv.currentPositionAsOrigin ? "Mi ubicación actual" : readMapProv.origin?.address ??  "";
+
+    if (readMapProv.destination != null && readMapProv.destination!.toLatLng() == currentLatLng){
+      destinationInputController.text = "Mi ubicación actual";
+    }
+    else {
+      destinationInputController.text = readMapProv.destination?.address ??  "";
+    }
   }
 
   allowOriginSelection() {
@@ -111,7 +140,8 @@ class _MapScreenState extends State<MapScreen> {
       modifyDestination = false;
       modifyOrigin = false;
     }
-    readMapProv.updateMapCameraPosition(target: LatLng(position.latitude, position.longitude));
+    updateMapCameraPosition(target: LatLng(position.latitude, position.longitude));
+    updateTextInputs();
     showLocationDialog(
       LocationModel(
         latitude: readMapProv.destination!.latitude,
@@ -119,7 +149,6 @@ class _MapScreenState extends State<MapScreen> {
         address: readMapProv.destination!.address, 
       )
     );
-    readMapProv.updateTextInputs();
   }
 
   Set<Marker> getMapMarkers(){
@@ -157,11 +186,11 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     
-    watchMapProv = context.watch<MapProvider>(); // Listens/watches for changes on the provider's data
     readMapProv = context.read<MapProvider>(); // Just reads the provider's data
+    watchMapProv = context.watch<MapProvider>(); // Listens/watches for changes on the provider's data
 
-    watchNavigationProv = context.watch<NavigationProvider>();
     readNavigationProv = context.read<NavigationProvider>();
+    watchNavigationProv = context.watch<NavigationProvider>();
 
     return watchMapProv.isLoading ? MyLoadingScreen() : Scaffold(
       backgroundColor: MyColors.white,
@@ -180,7 +209,7 @@ class _MapScreenState extends State<MapScreen> {
                 tilt: 0.0,
               ),
               onMapCreated: (controller) {
-                readMapProv.googleMapsController = controller;
+                googleMapsController = controller;
               },
               markers: getMapMarkers(),
               polylines: getMapPolylines(),
@@ -193,7 +222,7 @@ class _MapScreenState extends State<MapScreen> {
                 dropMarker(position);
               },
               onCameraMove: (position) {
-                readMapProv.draggableScrollableController.animateTo(
+                draggableSheetController.animateTo(
                   dssMinChildSize,
                   duration: Duration(milliseconds : 100),
                   curve: Curves.linearToEaseOut,
@@ -202,15 +231,11 @@ class _MapScreenState extends State<MapScreen> {
               },
             ),
             watchMapProv.mode != Modes.navigation ? Container() : NavigationOverlay(
-              route: watchNavigationProv.route!,
-              routeCurrentIndex: 0,
-              polyline: getMapPolylines().first,
-              mainInstruction: watchNavigationProv.route!.pathEdges[watchNavigationProv.pathCurrentIndex+1].attributes['name'] ?? 'Calle Desconocida',
               mainInstructionImg: Image.asset('assets/turn_left.png', color: MyColors.white,),
               showFollowUpInstruction: false,
             ),
             DraggableScrollableSheet(
-              controller: watchMapProv.draggableScrollableController,
+              controller: draggableSheetController,
               initialChildSize: dssInitialChildSize,
               minChildSize: dssMinChildSize,
               snap: true,
@@ -280,7 +305,7 @@ class _MapScreenState extends State<MapScreen> {
                   child: Column(
                     children: [
                       TextField(
-                        controller: watchMapProv.originInputController,
+                        controller: originInputController,
                         style: MyTextStyles.inputTextStyle,
                         readOnly: true,
                         keyboardType: TextInputType.streetAddress,
@@ -300,7 +325,7 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                       SizedBox(height: 10,),
                       TextField(
-                        controller: watchMapProv.destinationInputController,
+                        controller: destinationInputController,
                         style: MyTextStyles.inputTextStyle,
                         keyboardType: TextInputType.streetAddress,
                         textAlignVertical: TextAlignVertical.center,
@@ -316,7 +341,7 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ),
                         onTap: (){
-                          readMapProv.draggableScrollableController.animateTo(
+                          draggableSheetController.animateTo(
                             1,
                             duration: Duration(milliseconds : 300),
                             curve: Curves.linearToEaseOut,
@@ -381,7 +406,16 @@ class _MapScreenState extends State<MapScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                onPressed: null,// readRequestRouteProvider.exitNavigation, !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                onPressed: (){
+                  readNavigationProv.cancelNavigation();
+                  draggableSheetController.animateTo(
+                    dssMinChildSize,
+                    duration: Duration(milliseconds : 100),
+                    curve: Curves.linearToEaseOut,
+                  );
+                  updateMapCameraPosition();
+                  updateDraggableScrollableSheetSizes();
+                },
                 iconSize: 60,
                 icon: Image.asset(
                   'assets/cancel_icon.png',
@@ -395,7 +429,7 @@ class _MapScreenState extends State<MapScreen> {
                 ],
               ),
               IconButton(
-                onPressed: computeAlternativeRoutes,
+                onPressed: readNavigationProv.computeAlternativeRoutes,
                 iconSize: 60,
                 icon: Image.asset(
                   'assets/alternative_routes_icon.png',
@@ -516,18 +550,21 @@ class _MapScreenState extends State<MapScreen> {
                   style: MyButtonStyles.primary,
                   child: Text('Iniciar Ruta', style: MyTextStyles.button2),
                   onPressed: (){
+
                     readNavigationProv.route = routeOption;
+                    readNavigationProv.polyline = getMapPolylines().first;
+
                     readNavigationProv.route!.waypoints = [
                       readMapProv.destination!,
                       readMapProv.destination!,
                       readMapProv.destination!,
                     ]; // FOR TESTING ONLY
                     readMapProv.mode = Modes.navigation;
-                    readMapProv.updateMapCameraPosition(
+                    updateMapCameraPosition(
                       target: readNavigationProv.route!.origin.toLatLng(),
                     );
                     updateDraggableScrollableSheetSizes();
-                    readMapProv.draggableScrollableController.animateTo(
+                    draggableSheetController.animateTo(
                       dssMinChildSize,
                       duration: Duration(milliseconds : 100),
                       curve: Curves.linearToEaseOut,
@@ -611,10 +648,10 @@ class _MapScreenState extends State<MapScreen> {
           readMapProv.destination = place;
           readMapProv.waypoints = [readMapProv.destination!];
           readMapProv.searchResults = [];
-
           await readMapProv.computeRoutes();
+          updateTextInputs();
           updateDraggableScrollableSheetSizes();
-          readMapProv.draggableScrollableController.animateTo(
+          draggableSheetController.animateTo(
             dssSnapSizes[0],
             duration: Duration(milliseconds : 100),
             curve: Curves.linearToEaseOut,
@@ -668,11 +705,18 @@ class _MapScreenState extends State<MapScreen> {
               content: Wrap(
                 direction: Axis.vertical,
                 children: [
-                  Text(location.name ?? 'Name', style: MyTextStyles.h1,),
                   Container(
                     width: 280,
                     child: Text(
-                      location.address ?? 'Address',
+                      location.name ?? 'Sin nombre',
+                      style: MyTextStyles.h1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Container(
+                    width: 280,
+                    child: Text(
+                      location.address ?? 'Dirección desconocida',
                       style: MyTextStyles.h3,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -692,14 +736,23 @@ class _MapScreenState extends State<MapScreen> {
                   style: MyButtonStyles.secondary,
                   child: Text('Buscar Rutas'),
                   onPressed: () async {
-                    Navigator.pop(context);
-                    await readMapProv.computeRoutes();
-                    updateDraggableScrollableSheetSizes();
-                    readMapProv.draggableScrollableController.animateTo(
-                      dssSnapSizes[0],
-                      duration: Duration(milliseconds : 100),
-                      curve: Curves.linearToEaseOut,
-                    );
+                    if (readMapProv.origin != null && readMapProv.destination != null) {
+                      Navigator.pop(context);
+                      await readMapProv.computeRoutes();
+                      updateTextInputs();
+                      updateDraggableScrollableSheetSizes();
+                      draggableSheetController.animateTo(
+                        dssSnapSizes[0],
+                        duration: Duration(milliseconds : 100),
+                        curve: Curves.linearToEaseOut,
+                      );
+                    }
+                    else {
+                      Fluttertoast.showToast(
+                        msg: "Defina al menos un punto de destino",
+                        toastLength: Toast.LENGTH_LONG
+                      );
+                    }
                   },
                 ),
               ],

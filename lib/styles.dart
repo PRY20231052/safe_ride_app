@@ -60,7 +60,7 @@ class MyTextStyles {
   static const TextStyle h1 = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w600,
-    fontSize: 26,
+    fontSize: 24,
     color: MyColors.black,
   );
   static const TextStyle h2 = TextStyle(

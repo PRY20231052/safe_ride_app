@@ -12,7 +12,13 @@ void main() {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (context) => MapProvider()),
-        ChangeNotifierProvider(create: (context) => NavigationProvider()),
+        ChangeNotifierProxyProvider<MapProvider, NavigationProvider>(
+          create: (context) => NavigationProvider(),
+          update: (context, mapProvider, navigationProvider) {
+            navigationProvider!.mapProvider = mapProvider;
+            return navigationProvider;
+          },
+        ),
       ],
       child: MyApp(),
     ),

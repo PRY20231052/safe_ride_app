@@ -3,9 +3,7 @@
 import 'dart:developer';
 
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:safe_ride_app/models/route_model.dart';
 import 'package:safe_ride_app/providers/navigation_provider.dart';
 import '../styles.dart';
 
@@ -60,7 +58,7 @@ class NavigationOverlay extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    watchNavigationProv.route!.pathEdges[watchNavigationProv.pathCurrentIndex].attributes['name'] ?? 'Calle Desconocida',
+                    watchNavigationProv.route!.paths[0].edges[watchNavigationProv.pathCurrentIndex].attributes['name'] ?? 'Calle Desconocida',
                     style: TextStyle(
                       fontFamily: MyTextStyles.fontName,
                       fontWeight: FontWeight.w500,
@@ -111,7 +109,7 @@ class NavigationOverlay extends StatelessWidget {
                     flex: 7,
                     child: Container(
                       child: Text(
-                        watchNavigationProv.route!.pathEdges[watchNavigationProv.pathCurrentIndex+1].attributes['name'] ?? 'Calle Desconocida',
+                        watchNavigationProv.route!.paths[0].edges[watchNavigationProv.pathCurrentIndex+1].attributes['name'] ?? 'Calle Desconocida',
                         style: TextStyle(
                           fontFamily: MyTextStyles.fontName,
                           fontWeight: FontWeight.w600,

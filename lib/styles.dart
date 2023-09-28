@@ -1,25 +1,25 @@
 // ignore_for_file: prefer_const_constructors
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 class MyColors {
-  static const Color mainBlue = Color(0xff4BA1EE);
-  static const Color secondary = Color(0xff1d1d1b);
+  static const Color mainBlue = Color.fromARGB(255, 75, 161, 238);
+  static const Color secondary = Color.fromARGB(255, 29, 29, 27);
+  
+  static const Color paleBlue = Color.fromARGB(255, 132, 167, 207);
+  static const Color mildBlue = Color.fromARGB(255, 64, 128, 203);
+  static const Color coldBlue = Color.fromARGB(255, 32, 95, 172);
+  static const Color red = Color.fromARGB(255, 229, 89, 89);
+  static const Color yellow = Color.fromARGB(255, 242, 206, 80);
+  static const Color turquoise = Color.fromARGB(255, 72, 203, 171);
+  static const Color darkTurquoise = Color.fromARGB(255, 0, 194, 145);
+  static const Color purple = Color.fromARGB(255, 179, 130, 209);
 
-  static const Color mildBlue = Color(0xff4080CB);
-  static const Color coldBlue = Color(0xff3268A8);
-  static const Color red = Color(0xffE55959);
-  static const Color yellow = Color(0xffF2CE50);
-  static const Color turquoise = Color(0xff48CBAB);
-  static const Color purple = Color(0xffB382D1);
-
-  static const Color black = Color(0xff000000);
-  static const Color darkGrey = Color(0xFF3A3A3A);
-  static const Color grey = Color(0xFF818181);
-  static const Color lightGrey = Color(0xFFE7E7E7);
-  static const Color lightestGrey = Color(0xFFF8F8F8);
-  static const Color white = Color(0xffffffff);
+  static const Color black = Color.fromARGB(255, 0, 0, 0);
+  static const Color grey = Color.fromARGB(255, 92, 92, 92);
+  static const Color lightGrey = Color.fromARGB(255, 231, 231, 231);
+  static const Color lightestGrey = Color.fromARGB(255, 248, 248, 248);
+  static const Color white = Color.fromARGB(255, 255, 255, 255);
 }
 
 class MyButtonStyles {
@@ -60,45 +60,45 @@ class MyTextStyles {
   static const TextStyle h1 = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w600,
-    fontSize: 24,
+    fontSize: 23,
     color: MyColors.black,
   );
   static const TextStyle h2 = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     fontSize: 20,
     color: MyColors.black,
   );
   static const TextStyle h3 = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.w300,
-    fontSize: 18,
+    fontWeight: FontWeight.w400,
+    fontSize: 17,
     color: MyColors.black,
   );
   static const TextStyle h4 = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w300,
-    fontSize: 16,
+    fontSize: 15,
     color: MyColors.black,
   );
   static const TextStyle body = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w200,
-    fontSize: 14,
+    fontSize: 13,
     color: MyColors.grey,
   );
 
-  static const TextStyle primaryButton = TextStyle(
+  static const TextStyle button1 = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w700,
-    fontSize: 16,
+    fontSize: 18,
     letterSpacing: 1.25,
     color: MyColors.white,
   );
 
   static const TextStyle button2 = TextStyle(
     fontFamily: fontName,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w600,
     fontSize: 14,
     letterSpacing: 1.25,
     color: MyColors.white,
@@ -145,7 +145,7 @@ class Templates {
         border: basicIB,
         hintText: text,
         hintStyle: MyTextStyles.hintTextStyle,
-        prefixIcon: Icon(icon, color: MyColors.darkGrey),
+        prefixIcon: Icon(icon, color: MyColors.grey),
       );
 
   static TextField textField(

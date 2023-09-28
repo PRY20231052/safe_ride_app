@@ -52,8 +52,10 @@ class NavigationProvider with ChangeNotifier{
         if(mapProvider!.currentPositionAsOrigin){
           log('Setting new origin');
           mapProvider!.origin = LocationModel(
-            latitude: mapProvider!.currentPosition.latitude,
-            longitude: mapProvider!.currentPosition.longitude,
+            coordinates: LatLng(
+              mapProvider!.currentPosition.latitude,
+              mapProvider!.currentPosition.longitude,
+            ),
           );
         }
       }
@@ -70,8 +72,8 @@ class NavigationProvider with ChangeNotifier{
 
   void handleNavigationProgress(){
     //////////////////////////////////////////
-    log('path nodes len ${_route!.pathNodes.length}');
-    log('path edges len ${_route!.pathEdges.length}');
+    log('path nodes len ${_route!.paths[0].nodes.length}');
+    log('path edges len ${_route!.paths[0].edges.length}');
     
     var polylineIndex = getPolylineIndexByLatLng(
       _polyline!,
@@ -84,18 +86,18 @@ class NavigationProvider with ChangeNotifier{
 
     if(polylineIndex != -1){
 
-      log('CURRENT INDEX: $_pathCurrentIndex/${_route!.pathNodes.length}');
-      for (var i = _pathCurrentIndex + 1; i < _route!.pathNodes.length; i++){
+      log('CURRENT INDEX: $_pathCurrentIndex/${_route!.paths[0].nodes.length}');
+      for (var i = _pathCurrentIndex + 1; i < _route!.paths[0].nodes.length; i++){
         double distance = computeDistanceBetweenPoints(
           LatLng(mapProvider!.currentPosition.latitude, mapProvider!.currentPosition.longitude),
-          LatLng(_route!.pathNodes[i].latitude, _route!.pathNodes[i].longitude)
+          LatLng(_route!.paths[0].nodes[i].latitude, _route!.paths[0].nodes[i].longitude)
         );
         i == 1 ? log('Distance to next node: $distance') : null;
         // if we go pass the node's threshold radius
         if (!_isInsideNodeRadius && distance <= nodeThresholdRadius){
           _isInsideNodeRadius = true;
           // we have landed into the node so we have to now go to the next step
-          log('Arrived to node $i/${_route!.pathNodes.length}  Distance to center of node: $distance');
+          log('Arrived to node $i/${_route!.paths[0].nodes.length}  Distance to center of node: $distance');
           break;
         }
         // for the inmidiate next node, check if we are leaving the node radius to update the current node status

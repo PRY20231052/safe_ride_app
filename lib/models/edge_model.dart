@@ -1,9 +1,9 @@
-import 'location_model.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class EdgeModel {
-
-  LocationModel source;
-  LocationModel target;
+  
+  LatLng source;
+  LatLng target;
   Map<String, dynamic> attributes;
 
   EdgeModel({
@@ -14,16 +14,16 @@ class EdgeModel {
 
   factory EdgeModel.fromJson(Map<String, dynamic> json){
     return EdgeModel(
-      source: LocationModel.fromJson(json['source']),
-      target: LocationModel.fromJson(json['target']),
+      source: LatLng(json['source']['latitude'], json['source']['longitude']),
+      target: LatLng(json['target']['latitude'], json['target']['longitude']),
       attributes: json['attributes'],
     );
   }
 
   Map<String, dynamic> toJson(){
     return {
-      'source': source.toJson(),
-      'target': target.toJson(),
+      'source': {'latitude': source.latitude, 'longitude': source.longitude},
+      'target': {'latitude': target.latitude, 'longitude': target.longitude},
       'attributes': attributes,
     };
   }

@@ -16,51 +16,30 @@ class SafeRideApi {
       Uri.parse('${baseURL}/routes/'),
       headers: {
         'Content-type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: jsonEncode({
-        "origin": {
-          "latitude": origin.latitude,
-          "longitude": origin.longitude
-        },
-        "waypoints": [
-          {
-            "latitude": destination.latitude,
-            "longitude": destination.longitude
-          }
-        ]
-      })
-    );
-    if (response.statusCode == 201) {
-      RouteModel? route = RouteModel.fromJson(jsonDecode(response.body));
-      return route;
-    }
-    return null;
-  }
-  Future<List<RouteModel>?> requestRoutes(LatLng origin, LatLng destination) async {
-    var response = await http.post(
-      Uri.parse('${baseURL}/routes/'),
-      headers: {
-        'Content-type': 'application/json',
         'Accept': 'application/json',
         'charset': 'utf-8',
       },
       body: jsonEncode({
         "origin": {
-          "latitude": origin.latitude,
-          "longitude": origin.longitude
+          "coordinates": {
+            "latitude": origin.latitude, 
+            "longitude": origin.longitude
+          }
         },
         "waypoints": [
           {
-            "latitude": destination.latitude,
-            "longitude": destination.longitude
+            "coordinates": {
+              "latitude": destination.latitude,
+              "longitude": destination.longitude
+            }
           }
         ]
       })
     );
+    // log(response.body);
     if (response.statusCode == 201) {
       RouteModel? route = RouteModel.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
-      return [route];
+      return route;
     }
     return null;
   }

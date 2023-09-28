@@ -8,6 +8,7 @@ import 'package:flutter_google_maps_webservices/geocoding.dart';
 import 'package:flutter_google_maps_webservices/geolocation.dart';
 import 'package:flutter_google_maps_webservices/places.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/location_model.dart';
 import '../models/route_model.dart';
 import '../services/safe_ride_api.dart';
@@ -31,7 +32,7 @@ class MapProvider with ChangeNotifier {
   List<LocationModel>? _waypoints;
   LocationModel? _destination;
   List<LocationModel> _searchResults = [];
-  List<RouteModel> _routeOptions = [];
+  RouteModel? _computedRoute;
   bool _currentPositionAsOrigin = true;
   bool _isComputingRoute = false;
   bool _isLoading = true;
@@ -45,7 +46,7 @@ class MapProvider with ChangeNotifier {
   List<LocationModel>? get waypoints => _waypoints;
   LocationModel? get destination => _destination;
   List<LocationModel> get searchResults => _searchResults;
-  List<RouteModel> get routeOptions => _routeOptions;
+  RouteModel? get computedRoute => _computedRoute;
   bool get currentPositionAsOrigin => _currentPositionAsOrigin;
   bool get isComputingRoute => _isComputingRoute;
   bool get isLoading => _isLoading;
@@ -57,7 +58,7 @@ class MapProvider with ChangeNotifier {
   set waypoints(List<LocationModel>? waypoints) {_waypoints = waypoints; notifyListeners();}
   set destination(LocationModel? destination){_destination = destination; notifyListeners(); }
   set searchResults(List<LocationModel> searchResults){_searchResults = searchResults; notifyListeners(); }
-  set routeOptions(List<RouteModel> routeOptions){_routeOptions = routeOptions; notifyListeners(); }
+  set computedRoute(RouteModel? computedRoute){_computedRoute = computedRoute; notifyListeners(); }
   set currentPositionAsOrigin(bool currentPositionAsOrigin){_currentPositionAsOrigin = currentPositionAsOrigin; notifyListeners(); }
   set isComputingRoute(bool isComputingRoute){_isComputingRoute = isComputingRoute; notifyListeners(); }
   set isLoading(bool isLoading){_isLoading = isLoading; notifyListeners();}
@@ -72,7 +73,7 @@ class MapProvider with ChangeNotifier {
     _geolocationApi = GoogleMapsGeolocation(apiKey: dotenv.env['GOOGLE_MAPS_API_KEY']);
 
     _currentPosition = await Geolocator.getCurrentPosition();
-    _origin = LocationModel(latitude: _currentPosition.latitude, longitude: _currentPosition.longitude);
+    _origin = LocationModel(coordinates: LatLng(_currentPosition.latitude, _currentPosition.longitude));
     _isLoading = false;
     notifyListeners();
   }
@@ -84,8 +85,7 @@ class MapProvider with ChangeNotifier {
     if (response.isOkay){
       // log(response.results.first.placeId);
       return LocationModel(
-        latitude: latitude,
-        longitude: longitude,
+        coordinates: LatLng(latitude, longitude),
         address: response.results.first.formattedAddress,
       );
     }
@@ -99,7 +99,7 @@ class MapProvider with ChangeNotifier {
     var response = await _placesApi.autocomplete(
       textInput,
       sessionToken: sessionToken,
-      location: Location(lat: _origin!.latitude, lng: _origin!.longitude),
+      location: Location(lat: _origin!.coordinates.latitude, lng: _origin!.coordinates.longitude),
       radius: 3000, // in meters
     );
 
@@ -113,8 +113,10 @@ class MapProvider with ChangeNotifier {
         //if (prediction.placeId == null) return;
         placesResults.add(
           LocationModel(
-            latitude: details.result.geometry!.location.lat,
-            longitude: details.result.geometry!.location.lng,
+            coordinates: LatLng(
+              details.result.geometry!.location.lat,
+              details.result.geometry!.location.lng,
+            ),
             name: prediction.description,
             address: details.result.formattedAddress,
           ),
@@ -148,20 +150,20 @@ class MapProvider with ChangeNotifier {
     }
   }
 
-  Future<void> computeRoutes() async {
+  Future<void> computeRoute() async {
     _isComputingRoute = true;
     notifyListeners();
-    _routeOptions = await _safeRideApi.requestRoutes(
-      _origin!.toLatLng(),
-      _destination!.toLatLng(),
-    ) ?? [];
+    _computedRoute = await _safeRideApi.requestRoute(
+      _origin!.coordinates,
+      _destination!.coordinates,
+    );
     _mode = Modes.routeSelection;
     _isComputingRoute = false;
     notifyListeners();
   }
 
   clearDestination(){
-    _routeOptions = [];
+    _computedRoute = null;
     _destination = null;
     _waypoints = [];
     _searchResults = [];

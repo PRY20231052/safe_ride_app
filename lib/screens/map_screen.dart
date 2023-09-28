@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:safe_ride_app/models/location_model.dart';
-import 'package:safe_ride_app/models/route_model.dart';
+import 'package:safe_ride_app/models/path_model.dart';
 import 'package:safe_ride_app/my_widgets/my_loading_screen.dart';
 import 'package:safe_ride_app/my_widgets/navigation_overlay.dart';
 import 'package:safe_ride_app/providers/map_provider.dart';
@@ -39,6 +39,7 @@ class _MapScreenState extends State<MapScreen> {
   DraggableScrollableController draggableSheetController = DraggableScrollableController();
 
   // DraggableScrollableSheet parameters
+  int highlightedPolylineIndex = 0;
   double dssMinChildSize = 0.1;
   double dssInitialChildSize = 0.30;
   List<double> dssSnapSizes = [0.30];
@@ -86,7 +87,7 @@ class _MapScreenState extends State<MapScreen> {
 
   void updateMapCameraPosition({LatLng? target}){
     // ??= means if target is null then assign...
-    target ??= watchMapProv.mode == Modes.navigation ? readNavigationProv.route!.origin.toLatLng() : readMapProv.origin!.toLatLng();
+    target ??= watchMapProv.mode == Modes.navigation ? readNavigationProv.route!.origin.coordinates : readMapProv.origin!.coordinates;
     googleMapsController.animateCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(
@@ -102,7 +103,7 @@ class _MapScreenState extends State<MapScreen> {
     LatLng currentLatLng = LatLng(readMapProv.currentPosition.latitude, readMapProv.currentPosition.longitude);
     originInputController.text = readMapProv.currentPositionAsOrigin ? "Mi ubicación actual" : readMapProv.origin?.address ??  "";
 
-    if (readMapProv.destination != null && readMapProv.destination!.toLatLng() == currentLatLng){
+    if (readMapProv.destination != null && readMapProv.destination!.coordinates == currentLatLng){
       destinationInputController.text = "Mi ubicación actual";
     }
     else {
@@ -123,13 +124,12 @@ class _MapScreenState extends State<MapScreen> {
 
     readMapProv.mode = Modes.waypointsSelection;
     readMapProv.searchResults = [];
-    readMapProv.routeOptions = [];
+    readMapProv.computedRoute = null;
     updateDraggableScrollableSheetSizes();
 
     if (modifyOrigin) {
       readMapProv.origin = LocationModel(
-        latitude: position.latitude,
-        longitude: position.longitude
+        coordinates: LatLng(position.latitude, position.longitude),
       );
     } else if (modifyDestination) {
       readMapProv.destination = await readMapProv.fetchLocationByLatLng(
@@ -142,20 +142,14 @@ class _MapScreenState extends State<MapScreen> {
     }
     updateMapCameraPosition(target: LatLng(position.latitude, position.longitude));
     updateTextInputs();
-    showLocationDialog(
-      LocationModel(
-        latitude: readMapProv.destination!.latitude,
-        longitude: readMapProv.destination!.longitude,
-        address: readMapProv.destination!.address, 
-      )
-    );
+    showLocationDialog(readMapProv.destination!);
   }
 
   Set<Marker> getMapMarkers(){
     return watchMapProv.destination == null ? {} : {
       Marker(
         markerId: MarkerId('destination'),
-        position: readMapProv.destination!.toLatLng(),
+        position: readMapProv.destination!.coordinates,
         icon: BitmapDescriptor.defaultMarker,
         onTap: () async {
           await showLocationDialog(readMapProv.destination!);
@@ -165,20 +159,21 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Set<Polyline> getMapPolylines(){
-    // PROBLEM CAUSE ROUTE MODEL WILL HAVE ONLY ONE ROUTE GEOJSON
-    // MIGHT HAVE TO USE length == 0
-    return watchMapProv.routeOptions.isEmpty ? {} : {
-      for (var pathFeature in readMapProv.routeOptions[0].pathGeojson['features'])
+    if (readMapProv.computedRoute == null){
+      return {};
+    }
+    // polylines are drawed in order so the last one is the one being seen
+    // so we are reversing it so the first path, the generated one, is on top
+    List<dynamic> paths = readMapProv.computedRoute!.paths;
+    return {
+      for (int i = 0; i < paths.length; i++)
         Polyline(
-          polylineId: PolylineId(pathFeature['id']),
-          color: MyColors.purple,
+          polylineId: PolylineId(i.toString()),
+          color: i == highlightedPolylineIndex ? MyColors.coldBlue : MyColors.paleBlue,
           jointType: JointType.round,
           endCap: Cap.roundCap,
-          width: watchMapProv.mode == Modes.navigation ? 15 : 6,
-          points: [
-            for(var coordinate in pathFeature['geometry']['coordinates'])
-              LatLng(coordinate[0], coordinate[1])
-          ],
+          width: watchMapProv.mode == Modes.navigation ? 15 : 7,
+          points: paths[i].polylinePoints,
         ),
     };
   }
@@ -204,7 +199,7 @@ class _MapScreenState extends State<MapScreen> {
               zoomControlsEnabled: true,
               zoomGesturesEnabled: true,
               initialCameraPosition: CameraPosition(
-                target: watchMapProv.origin!.toLatLng(),
+                target: watchMapProv.origin!.coordinates,
                 zoom: 15,
                 tilt: 0.0,
               ),
@@ -301,7 +296,7 @@ class _MapScreenState extends State<MapScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Expanded(
-                  flex: 7,
+                  flex: 8,
                   child: Column(
                     children: [
                       TextField(
@@ -354,13 +349,12 @@ class _MapScreenState extends State<MapScreen> {
                     ],
                   ),
                 ),
-                SizedBox(width: 10),
                 Expanded(
                   flex: 1,
                   child: IconButton(
                     icon: Icon(
                       CupertinoIcons.arrow_2_squarepath,
-                      color: MyColors.darkGrey,
+                      color: MyColors.grey,
                       size: 30,
                     ),
                     onPressed: () {
@@ -379,7 +373,7 @@ class _MapScreenState extends State<MapScreen> {
               ],
             ),
           ),
-          SizedBox(height: 30),
+          SizedBox(height: 20),
           // Container(
           //   height: 50,
           //   width: double.infinity,
@@ -424,8 +418,8 @@ class _MapScreenState extends State<MapScreen> {
               ),
               Column(
                 children: [
-                  Text('${(watchNavigationProv.route!.etaSeconds/60).toStringAsFixed(0)} mins', style: MyTextStyles.h1,),
-                  Text('${(watchNavigationProv.route!.distanceMeters/1000).toStringAsFixed(1)} km - eta time', style: MyTextStyles.h2,),
+                  Text('${(watchNavigationProv.route!.paths[0].etaSeconds/60).toStringAsFixed(0)} mins', style: MyTextStyles.h1,),
+                  Text('${(watchNavigationProv.route!.paths[0].distanceMeters/1000).toStringAsFixed(1)} km - eta time', style: MyTextStyles.h2,),
                 ],
               ),
               IconButton(
@@ -457,8 +451,23 @@ class _MapScreenState extends State<MapScreen> {
         },
       );
     }
-    else if (watchMapProv.mode == Modes.routeSelection && watchMapProv.routeOptions.isNotEmpty){
-      return routeOptionTile(watchMapProv.routeOptions[0]);
+    else if (watchMapProv.mode == Modes.routeSelection && watchMapProv.computedRoute != null){
+      return ListView.separated(
+        shrinkWrap: true,
+        physics: NeverScrollableScrollPhysics(),
+        itemCount: readMapProv.computedRoute!.paths.length,
+        itemBuilder: (context, index){
+          return pathOptionTile(
+            pathIndex: index,
+            title: index == 0 ? 'Ruta óptima' : 'Ruta alternativa',
+            titleColor: index == 0 ? MyColors.coldBlue : MyColors.paleBlue,
+            outOfFocus: false,
+          );
+        },
+        separatorBuilder: (context, index){
+          return SizedBox(height: 13,);
+        },
+      );
     }
     else if (watchMapProv.mode == Modes.navigation){
       return Container(
@@ -489,9 +498,21 @@ class _MapScreenState extends State<MapScreen> {
   //   return ; 
   // }
 
-  Widget routeOptionTile(RouteModel routeOption) {
+  Widget pathOptionTile({
+    required int pathIndex,
+    required String title,
+    Color titleColor = MyColors.black,
+    bool outOfFocus = false
+  }) {
+    // log(pathIndex.toString());
+    // log(readMapProv.computedRoute!.paths[pathIndex].distanceMeters.toString());
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+      padding: EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+      foregroundDecoration: outOfFocus ? BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        color: Color.fromARGB(106, 0, 0, 0),
+        backgroundBlendMode: BlendMode.color,
+      ) : null,
       decoration: BoxDecoration(
         color: MyColors.white,
         borderRadius: BorderRadius.circular(10),
@@ -503,29 +524,29 @@ class _MapScreenState extends State<MapScreen> {
       child: Row(
         children: [
           Expanded(
-            flex: 5,
+            flex: 6,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Ruta óptima',
+                  title,
                   style: TextStyle(
                     fontFamily: MyTextStyles.fontName,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 20,
-                    color: MyColors.turquoise,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 19,
+                    color: titleColor,
                   ),
                 ),
-                SizedBox(height: 15,),
-                routeInfoGraphBar(
-                  width: 200,
-                  route: routeOption,
+                SizedBox(height: 10,),
+                pathInfoGraphBar(
+                  width: 180,
+                  path: readMapProv.computedRoute!.paths[pathIndex],
                 ),
                 SizedBox(height: 10,),
                 Row(
                   children: [
                     routeTag(Icons.directions_bike, "Ciclovía", MyColors.turquoise),
-                    SizedBox(width: 8),
+                    SizedBox(width: 5),
                     routeTag(CupertinoIcons.car, "Autopista", MyColors.yellow),
                   ],
                 ),
@@ -533,44 +554,53 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
           Expanded(
-            flex: 3,
+            flex: 4,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(
-                  '${(routeOption.etaSeconds/60).toStringAsFixed(0)} mins',
-                  style: MyTextStyles.h1,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '${(watchMapProv.computedRoute!.paths[pathIndex].etaSeconds/60).toStringAsFixed(0)} mins',
+                      style: MyTextStyles.h2,
+                    ),
+                    SizedBox(width: 10,),
+                    Text(
+                      '${(watchMapProv.computedRoute!.paths[pathIndex].distanceMeters/1000).toStringAsFixed(1)} km',
+                      style: MyTextStyles.h3,
+                    ),
+                  ],
                 ),
-                Text(
-                  '${(routeOption.distanceMeters/1000).toStringAsFixed(1)} km',
-                  style: MyTextStyles.h2,
-                ),
-                SizedBox(height: 10,),
-                ElevatedButton(
-                  style: MyButtonStyles.primary,
-                  child: Text('Iniciar Ruta', style: MyTextStyles.button2),
-                  onPressed: (){
-
-                    readNavigationProv.route = routeOption;
-                    readNavigationProv.polyline = getMapPolylines().first;
-
-                    readNavigationProv.route!.waypoints = [
-                      readMapProv.destination!,
-                      readMapProv.destination!,
-                      readMapProv.destination!,
-                    ]; // FOR TESTING ONLY
-                    readMapProv.mode = Modes.navigation;
-                    updateMapCameraPosition(
-                      target: readNavigationProv.route!.origin.toLatLng(),
-                    );
-                    updateDraggableScrollableSheetSizes();
-                    draggableSheetController.animateTo(
-                      dssMinChildSize,
-                      duration: Duration(milliseconds : 100),
-                      curve: Curves.linearToEaseOut,
-                    );
-                    readNavigationProv.startNavigation();
-                  },
+                SizedBox(height: 2,),
+                Container(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: MyButtonStyles.primary,
+                    child: Text('INICIAR RUTA', style: MyTextStyles.button2),
+                    onPressed: (){
+                      // VERIFY THAT THIS WORKS
+                      readNavigationProv.route = readMapProv.computedRoute!;
+                      readNavigationProv.polyline = getMapPolylines().first;
+                
+                      readNavigationProv.route!.waypoints = [
+                        readMapProv.destination!,
+                        readMapProv.destination!,
+                        readMapProv.destination!,
+                      ]; // FOR TESTING ONLY
+                      readMapProv.mode = Modes.navigation;
+                      updateMapCameraPosition(
+                        target: readNavigationProv.route!.origin.coordinates,
+                      );
+                      updateDraggableScrollableSheetSizes();
+                      draggableSheetController.animateTo(
+                        dssMinChildSize,
+                        duration: Duration(milliseconds : 100),
+                        curve: Curves.linearToEaseOut,
+                      );
+                      readNavigationProv.startNavigation();
+                    },
+                  ),
                 ),
               ],
             ),
@@ -580,9 +610,9 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget routeInfoGraphBar({
+  Widget pathInfoGraphBar({
     required double width,
-    required RouteModel route,
+    required PathModel path,
     double cornersRadius = 12
   }){
     
@@ -595,16 +625,20 @@ class _MapScreenState extends State<MapScreen> {
 
     return Row(
       children: List.generate(
-        route.pathEdges.length,
+        path.edges.length,
         (index) => Container(
           height: 12,
-          width: route.pathEdges[index].attributes['length']/route.distanceMeters*width,
+          width: path.edges[index].attributes['length']/path.distanceMeters*width,
           decoration: BoxDecoration(
-            color: route.pathEdges[index].attributes['cycleway_level'] == '2' ? MyColors.turquoise : MyColors.yellow,
+            color: path.edges[index].attributes['cycleway_level'] == '2' ? MyColors.turquoise : MyColors.yellow,
             borderRadius: 
-              index == 0 ? BorderRadius.only(topLeft: Radius.circular(cornersRadius), bottomLeft: Radius.circular(cornersRadius)) :
-              index == route.pathEdges.length-1 ? BorderRadius.only(topRight: Radius.circular(cornersRadius), bottomRight: Radius.circular(cornersRadius)) :
-              BorderRadius.zero
+              index == 0 ? BorderRadius.only(
+                topLeft: Radius.circular(cornersRadius),
+                bottomLeft: Radius.circular(cornersRadius),
+              ) : index == path.edges.length-1 ? BorderRadius.only(
+                topRight: Radius.circular(cornersRadius),
+                bottomRight: Radius.circular(cornersRadius),
+              ) : BorderRadius.zero
           ),
         ),
       ),
@@ -623,13 +657,13 @@ class _MapScreenState extends State<MapScreen> {
       ),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 18,),
-          SizedBox(width: 8,),
+          Icon(icon, color: color, size: 14,),
+          SizedBox(width: 5,),
           Text(
             label, 
             style: TextStyle(
-              fontWeight: FontWeight.w400,
-              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              fontSize: 12,
               letterSpacing: 0.2,
               color: color,
             ),
@@ -648,7 +682,7 @@ class _MapScreenState extends State<MapScreen> {
           readMapProv.destination = place;
           readMapProv.waypoints = [readMapProv.destination!];
           readMapProv.searchResults = [];
-          await readMapProv.computeRoutes();
+          await readMapProv.computeRoute();
           updateTextInputs();
           updateDraggableScrollableSheetSizes();
           draggableSheetController.animateTo(
@@ -738,7 +772,7 @@ class _MapScreenState extends State<MapScreen> {
                   onPressed: () async {
                     if (readMapProv.origin != null && readMapProv.destination != null) {
                       Navigator.pop(context);
-                      await readMapProv.computeRoutes();
+                      await readMapProv.computeRoute();
                       updateTextInputs();
                       updateDraggableScrollableSheetSizes();
                       draggableSheetController.animateTo(

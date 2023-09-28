@@ -72,7 +72,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           width: double.infinity,
                           child: ElevatedButton(
                             style: MyButtonStyles.primary,
-                            child: Text('Sign Up', style: MyTextStyles.primaryButton,),
+                            child: Text('Sign Up', style: MyTextStyles.button1,),
                             onPressed: () {
                               
                             },

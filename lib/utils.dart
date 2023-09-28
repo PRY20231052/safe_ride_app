@@ -33,9 +33,19 @@ double computeDistanceBetweenPoints(LatLng point1, LatLng point2){
   ); 
 }
 
-bool isLocationOnPath(LocationModel location, Polyline polyline, double tolerance){
+int getPolylineIndexByLatLng(Polyline polyline, LatLng latlng){
+  return PolyUtils.locationIndexOnEdgeOrPath(
+    Point(latlng.latitude, latlng.longitude),
+    [for (var point in polyline.points) Point(point.latitude, point.longitude)],
+    false,
+    false,
+    10,
+  );
+}
+
+bool isLatLngOnPath(LatLng latlng, Polyline polyline, double tolerance){
   return PolyUtils.isLocationOnPathTolerance(
-    Point(location.latitude, location.longitude),
+    Point(latlng.latitude, latlng.longitude),
     [for (var point in polyline.points) Point(point.latitude, point.longitude)],
     false,
     tolerance,

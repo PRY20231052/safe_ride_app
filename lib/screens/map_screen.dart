@@ -436,13 +436,13 @@ class _MapScreenState extends State<MapScreen> {
                 iconSize: 60,
                 onPressed: () async {
                   // await readNavigationProv.computeAlternativeRouteFromCurrentPosition();
-                  await readMapProv.computeRoute();
-                  updateDraggableScrollableSheetSizes();
-                  draggableSheetController.animateTo(
-                    dssSnapSizes[0],
-                    duration: Duration(milliseconds : 100),
-                    curve: Curves.linearToEaseOut,
-                  );
+                  // await readMapProv.computeRoute();
+                  // updateDraggableScrollableSheetSizes();
+                  // draggableSheetController.animateTo(
+                  //   dssSnapSizes[0],
+                  //   duration: Duration(milliseconds : 100),
+                  //   curve: Curves.linearToEaseOut,
+                  // );
                   // updateMapCameraPosition();
                 },
                 icon: Image.asset(

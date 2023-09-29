@@ -288,175 +288,184 @@ class _MapScreenState extends State<MapScreen> {
 
   Widget draggableScrollableSheetContent(){
     if (watchMapProv.mode != Modes.navigation){
-      return Column(
-        children: [
-          Text(
-            '¿A dónde quieres ir?',
-            style: MyTextStyles.h1,
-          ),
-          SizedBox(height: 20),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 15, vertical: 15),
-            decoration: BoxDecoration(
-              color: MyColors.lightGrey,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Expanded(
-                  flex: 8,
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: originInputController,
-                        style: MyTextStyles.inputTextStyle,
-                        readOnly: true,
-                        keyboardType: TextInputType.streetAddress,
-                        textAlignVertical: TextAlignVertical.center,
-                        decoration: Templates.locationInputDecoration(
-                          "Origen",
-                          Container(
-                            padding: EdgeInsets.all(10),
-                            height: 10,
-                            child: Image.asset(
-                              'assets/thin-target.png',
-                              color: MyColors.mainBlue,
-                            ),
-                          ),
-                        ),
-                        onTap: allowOriginSelection,
-                      ),
-                      SizedBox(height: 10,),
-                      TextField(
-                        controller: destinationInputController,
-                        style: MyTextStyles.inputTextStyle,
-                        keyboardType: TextInputType.streetAddress,
-                        textAlignVertical: TextAlignVertical.center,
-                        decoration: Templates.locationInputDecoration(
-                          "Destino",
-                          Container(
-                            padding: EdgeInsets.all(10),
-                            height: 10,
-                            child: Image.asset(
-                              'assets/market.png',
-                              color: MyColors.mainBlue,
-                            ),
-                          ),
-                        ),
-                        onTap: (){
-                          draggableSheetController.animateTo(
-                            1,
-                            duration: Duration(milliseconds : 300),
-                            curve: Curves.linearToEaseOut,
-                          );
-                        },
-                        onChanged: (text) async {
-                          readMapProv.searchResults = text.length > 1 ? await readMapProv.searchPlacesByText(text) : [];
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: IconButton(
-                    icon: Icon(
-                      CupertinoIcons.arrow_2_squarepath,
-                      color: MyColors.grey,
-                      size: 30,
-                    ),
-                    onPressed: () {
-                      // if (origin != null && destination != null) {
-                      //   // swaping origin and destination
-                      //   final temp = origin;
-                      //   origin = destination;
-                      //   destination = temp;
-                      //   waypoints = [destination!];
-                      //   updateTextInputs();
-                      //   setState(() {});
-                      // }
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: 20),
-          // Container(
-          //   height: 50,
-          //   width: double.infinity,
-          //   child: ElevatedButton(
-          //     style: MyButtonStyles.primary,
-          //     child: Text(
-          //       'BUSCAR RUTAS',
-          //       style: MyTextStyles.primaryButton,
-          //     ),
-          //     onPressed: () {
-          //       computeRoutes();
-          //     },
-          //   ),
-          // ),
-          // SizedBox(height: 20),
-          dssComplementaryBottomContent(),
-        ],
-      );
+      return navigationContent();
     }
     else {
-      return Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      return navigationContent();
+    }
+  }
+
+  Widget navigationContent(){
+    List<PathModel> currentRoute = watchMapProv.computedRoute!.options[0];
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            IconButton(
+              iconSize: 60,
+              onPressed: (){
+                readNavigationProv.cancelNavigation();
+                updateDraggableScrollableSheetSizes();
+                draggableSheetController.animateTo(
+                  dssMinChildSize,
+                  duration: Duration(milliseconds : 100),
+                  curve: Curves.linearToEaseOut,
+                );
+                updateMapCameraPosition();
+              },
+              icon: Image.asset(
+                'assets/cancel_icon.png',
+                color: MyColors.red,
+              ),
+            ),
+            Column(
+              children: [
+                Text('${(currentRoute[currentSubPathIndex].etaSeconds/60).toStringAsFixed(0)} mins', style: MyTextStyles.h1,),
+                Text('${(currentRoute[currentSubPathIndex].distanceMeters/1000).toStringAsFixed(1)} km - eta time', style: MyTextStyles.h3,),
+              ],
+            ),
+            IconButton(
+              iconSize: 60,
+              onPressed: () async {
+                // await readNavigationProv.computeAlternativeRouteFromCurrentPosition();
+                await readMapProv.computeRoute();
+                updateDraggableScrollableSheetSizes();
+                draggableSheetController.animateTo(
+                  dssSnapSizes[0],
+                  duration: Duration(milliseconds : 100),
+                  curve: Curves.linearToEaseOut,
+                );
+                // updateMapCameraPosition();
+              },
+              icon: Image.asset(
+                'assets/alternative_routes_icon.png',
+                color: MyColors.mainBlue,
+              ),
+            ),
+          ],
+        ),
+        Divider(thickness: 2, height: 20,),
+        dssComplementaryBottomContent(),          
+      ],
+    );
+  }
+
+  Widget waypointsRouteSelectionContent(){
+    return Column(
+      children: [
+        Text(
+          '¿A dónde quieres ir?',
+          style: MyTextStyles.h1,
+        ),
+        SizedBox(height: 20),
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+          decoration: BoxDecoration(
+            color: MyColors.lightGrey,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              IconButton(
-                iconSize: 60,
-                onPressed: (){
-                  readNavigationProv.cancelNavigation();
-                  updateDraggableScrollableSheetSizes();
-                  draggableSheetController.animateTo(
-                    dssMinChildSize,
-                    duration: Duration(milliseconds : 100),
-                    curve: Curves.linearToEaseOut,
-                  );
-                  updateMapCameraPosition();
-                },
-                icon: Image.asset(
-                  'assets/cancel_icon.png',
-                  color: MyColors.red,
+              Expanded(
+                flex: 8,
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: originInputController,
+                      style: MyTextStyles.inputTextStyle,
+                      readOnly: true,
+                      keyboardType: TextInputType.streetAddress,
+                      textAlignVertical: TextAlignVertical.center,
+                      decoration: Templates.locationInputDecoration(
+                        "Origen",
+                        Container(
+                          padding: EdgeInsets.all(10),
+                          height: 10,
+                          child: Image.asset(
+                            'assets/thin-target.png',
+                            color: MyColors.mainBlue,
+                          ),
+                        ),
+                      ),
+                      onTap: allowOriginSelection,
+                    ),
+                    SizedBox(height: 10,),
+                    TextField(
+                      controller: destinationInputController,
+                      style: MyTextStyles.inputTextStyle,
+                      keyboardType: TextInputType.streetAddress,
+                      textAlignVertical: TextAlignVertical.center,
+                      decoration: Templates.locationInputDecoration(
+                        "Destino",
+                        Container(
+                          padding: EdgeInsets.all(10),
+                          height: 10,
+                          child: Image.asset(
+                            'assets/market.png',
+                            color: MyColors.mainBlue,
+                          ),
+                        ),
+                      ),
+                      onTap: (){
+                        draggableSheetController.animateTo(
+                          1,
+                          duration: Duration(milliseconds : 300),
+                          curve: Curves.linearToEaseOut,
+                        );
+                      },
+                      onChanged: (text) async {
+                        readMapProv.searchResults = text.length > 1 ? await readMapProv.searchPlacesByText(text) : [];
+                      },
+                    ),
+                  ],
                 ),
               ),
-              Column(
-                children: [
-                  Text('${(watchMapProv.computedRoute!.paths[0].etaSeconds/60).toStringAsFixed(0)} mins', style: MyTextStyles.h1,),
-                  Text('${(watchMapProv.computedRoute!.paths[0].distanceMeters/1000).toStringAsFixed(1)} km - eta time', style: MyTextStyles.h3,),
-                ],
-              ),
-              IconButton(
-                iconSize: 60,
-                onPressed: () async {
-                  // await readNavigationProv.computeAlternativeRouteFromCurrentPosition();
-                  await readMapProv.computeRoute();
-                  updateDraggableScrollableSheetSizes();
-                  draggableSheetController.animateTo(
-                    dssSnapSizes[0],
-                    duration: Duration(milliseconds : 100),
-                    curve: Curves.linearToEaseOut,
-                  );
-                  // updateMapCameraPosition();
-                },
-                icon: Image.asset(
-                  'assets/alternative_routes_icon.png',
-                  color: MyColors.mainBlue,
+              Expanded(
+                flex: 1,
+                child: IconButton(
+                  icon: Icon(
+                    CupertinoIcons.arrow_2_squarepath,
+                    color: MyColors.grey,
+                    size: 30,
+                  ),
+                  onPressed: () {
+                    // if (origin != null && destination != null) {
+                    //   // swaping origin and destination
+                    //   final temp = origin;
+                    //   origin = destination;
+                    //   destination = temp;
+                    //   waypoints = [destination!];
+                    //   updateTextInputs();
+                    //   setState(() {});
+                    // }
+                  },
                 ),
               ),
             ],
           ),
-          Divider(thickness: 2, height: 20,),
-          dssComplementaryBottomContent(),          
-        ],
-      );
-    }
+        ),
+        SizedBox(height: 20),
+        // Container(
+        //   height: 50,
+        //   width: double.infinity,
+        //   child: ElevatedButton(
+        //     style: MyButtonStyles.primary,
+        //     child: Text(
+        //       'BUSCAR RUTAS',
+        //       style: MyTextStyles.primaryButton,
+        //     ),
+        //     onPressed: () {
+        //       computeRoutes();
+        //     },
+        //   ),
+        // ),
+        // SizedBox(height: 20),
+        dssComplementaryBottomContent(),
+      ],
+    );
   }
 
 
@@ -475,10 +484,10 @@ class _MapScreenState extends State<MapScreen> {
       return ListView.separated(
         shrinkWrap: true,
         physics: NeverScrollableScrollPhysics(),
-        itemCount: readMapProv.computedRoute!.paths.length,
+        itemCount: readMapProv.computedRoute!.options.length,
         itemBuilder: (context, index){
           return pathOptionTile(
-            pathIndex: index,
+            optionIndex: index,
             title: index == 0 ? 'Ruta óptima' : 'Ruta alternativa',
             titleColor: index == 0 ? MyColors.coldBlue : MyColors.paleBlue,
             outOfFocus: false,
@@ -519,13 +528,20 @@ class _MapScreenState extends State<MapScreen> {
   // }
 
   Widget pathOptionTile({
-    required int pathIndex,
+    required int optionIndex,
     required String title,
     Color titleColor = MyColors.black,
     bool outOfFocus = false
   }) {
     // log(pathIndex.toString());
     // log(readMapProv.computedRoute!.paths[pathIndex].distanceMeters.toString());
+    double totalEtaSeconds = 0;
+    double totalDistanceMeters = 0;
+    for (var (i, subPath) in readMapProv.computedRoute!.options[optionIndex].indexed){
+      totalEtaSeconds += subPath.etaSeconds;
+      totalDistanceMeters += subPath.distanceMeters;
+    }
+    
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 15, vertical: 10),
       foregroundDecoration: outOfFocus ? BoxDecoration(
@@ -560,7 +576,7 @@ class _MapScreenState extends State<MapScreen> {
                 SizedBox(height: 10,),
                 pathInfoGraphBar(
                   width: 180,
-                  path: readMapProv.computedRoute!.paths[pathIndex],
+                  path: readMapProv.computedRoute!.options[optionIndex],
                 ),
                 SizedBox(height: 10,),
                 Row(
@@ -582,12 +598,12 @@ class _MapScreenState extends State<MapScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      '${(watchMapProv.computedRoute!.paths[pathIndex].etaSeconds/60).toStringAsFixed(0)} mins',
+                      '${(watchMapProv.computedRoute!.paths[optionIndex].etaSeconds/60).toStringAsFixed(0)} mins',
                       style: MyTextStyles.h2,
                     ),
                     SizedBox(width: 10,),
                     Text(
-                      '${(watchMapProv.computedRoute!.paths[pathIndex].distanceMeters/1000).toStringAsFixed(1)} km',
+                      '${(watchMapProv.computedRoute!.paths[optionIndex].distanceMeters/1000).toStringAsFixed(1)} km',
                       style: MyTextStyles.h3,
                     ),
                   ],
@@ -601,7 +617,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: Text('INICIAR RUTA', style: MyTextStyles.button2),
                     onPressed: (){
                       // Removing the rest of unselected routes, just to leave the selected one
-                      readMapProv.computedRoute!.paths = [readMapProv.computedRoute!.paths[pathIndex]];
+                      readMapProv.computedRoute!.paths = [readMapProv.computedRoute!.paths[optionIndex]];
                       // Since we only hace one path in paths, this will get that polyline
                       readNavigationProv.polyline = getMapPolylines().first;
                 

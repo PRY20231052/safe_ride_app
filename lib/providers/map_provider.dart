@@ -29,8 +29,7 @@ class MapProvider with ChangeNotifier {
   Modes _mode = Modes.waypointsSelection;
 
   LocationModel? _origin;
-  List<LocationModel>? _waypoints;
-  LocationModel? _destination;
+  List<LocationModel> _waypoints = [];
   List<LocationModel> _searchResults = [];
   RouteModel? _computedRoute;
   bool _currentPositionAsOrigin = true;
@@ -43,8 +42,7 @@ class MapProvider with ChangeNotifier {
   /////////////////////GETTERS////////////////////////////////////
   Modes get mode => _mode;
   LocationModel? get origin => _origin;
-  List<LocationModel>? get waypoints => _waypoints;
-  LocationModel? get destination => _destination;
+  List<LocationModel> get waypoints => _waypoints;
   List<LocationModel> get searchResults => _searchResults;
   RouteModel? get computedRoute => _computedRoute;
   bool get currentPositionAsOrigin => _currentPositionAsOrigin;
@@ -55,8 +53,7 @@ class MapProvider with ChangeNotifier {
   
   set mode(Modes mode){_mode = mode; notifyListeners();}
   set origin(LocationModel? origin){_origin = origin; notifyListeners(); }
-  set waypoints(List<LocationModel>? waypoints) {_waypoints = waypoints; notifyListeners();}
-  set destination(LocationModel? destination){_destination = destination; notifyListeners(); }
+  set waypoints(List<LocationModel> waypoints) {_waypoints = waypoints; notifyListeners();}
   set searchResults(List<LocationModel> searchResults){_searchResults = searchResults; notifyListeners(); }
   set computedRoute(RouteModel? computedRoute){_computedRoute = computedRoute; notifyListeners(); }
   set currentPositionAsOrigin(bool currentPositionAsOrigin){_currentPositionAsOrigin = currentPositionAsOrigin; notifyListeners(); }
@@ -155,7 +152,7 @@ class MapProvider with ChangeNotifier {
     notifyListeners();
     _computedRoute = await _safeRideApi.requestRoute(
       _origin!.coordinates,
-      _destination!.coordinates,
+      [for(var waypoint in _waypoints) waypoint.coordinates],
     );
     _mode = Modes.routeSelection;
     _isComputingRoute = false;
@@ -167,7 +164,7 @@ class MapProvider with ChangeNotifier {
     notifyListeners();
     _computedRoute = await _safeRideApi.requestRoute(
       LatLng(_currentPosition.latitude, _currentPosition.longitude),
-      _destination!.coordinates,
+      [for(var waypoint in _waypoints) waypoint.coordinates],
     );
     _isComputingRoute = false;
     // _mode = Modes.routeSelection;
@@ -177,7 +174,6 @@ class MapProvider with ChangeNotifier {
 
   clearDestination(){
     _computedRoute = null;
-    _destination = null;
     _waypoints = [];
     _searchResults = [];
     notifyListeners();

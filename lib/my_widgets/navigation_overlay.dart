@@ -58,7 +58,7 @@ class NavigationOverlay extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    watchMapProv.computedRoute!.paths[0].directions[watchNavigationProv.directionIndex!].streetName,
+                    watchMapProv.computedRoute!.options[0][watchNavigationProv.currentSubPathIndex!].directions[watchNavigationProv.directionIndex!].streetName,
                     style: TextStyle(
                       fontFamily: MyTextStyles.fontName,
                       fontWeight: FontWeight.w500,
@@ -76,7 +76,7 @@ class NavigationOverlay extends StatelessWidget {
   }
 
   Widget getDirectionImg(){
-    switch(watchMapProv.computedRoute!.paths[0].directions[watchNavigationProv.directionIndex!].endingAction){
+    switch(watchMapProv.computedRoute!.options[0][watchNavigationProv.currentSubPathIndex!].directions[watchNavigationProv.directionIndex!].endingAction){
       case 'turn_left':
         return Image.asset('assets/turn_left.png', color: MyColors.white,);
       
@@ -91,10 +91,10 @@ class NavigationOverlay extends StatelessWidget {
 
   Widget directionsSignWidget(){
     String nextStreetName = "";
-    if (watchNavigationProv.directionIndex! >= watchMapProv.computedRoute!.paths[0].directions.length - 1){
+    if (watchNavigationProv.directionIndex! >= watchMapProv.computedRoute!.options[0][watchNavigationProv.currentSubPathIndex!].directions.length - 1){
       nextStreetName = 'Llegando a tu destino';
     } else {
-      nextStreetName = watchMapProv.computedRoute!.paths[0].directions[watchNavigationProv.directionIndex! + 1].streetName;
+      nextStreetName = watchMapProv.computedRoute!.options[0][watchNavigationProv.currentSubPathIndex!].directions[watchNavigationProv.directionIndex! + 1].streetName;
     }
     return Material(
       elevation: 5,

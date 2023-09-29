@@ -29,7 +29,7 @@ class RouteModel {
         (json['option1'] as List).map((pathJson) => PathModel.fromJson(pathJson)).toList(),
         (json['option2'] as List).map((pathJson) => PathModel.fromJson(pathJson)).toList(),
       ],
-      pathsGeojson: json['path_geojson'],
+      pathsGeojson: json['path_geojson'] ?? {},
     );
   }
 

@@ -4,6 +4,7 @@ import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:safe_ride_app/providers/map_provider.dart';
 import 'package:safe_ride_app/providers/navigation_provider.dart';
 import '../styles.dart';
 
@@ -11,21 +12,17 @@ class NavigationOverlay extends StatelessWidget {
 
   late NavigationProvider readNavigationProv;
   late NavigationProvider watchNavigationProv;
+  late MapProvider readMapProv;
+  late MapProvider watchMapProv;
 
-  Widget mainInstructionImg;
   bool showFollowUpInstruction;
-  String? followUpInstruction;
-  Widget? followUpInstructionImg;
   Color mainSignColor;
   Color followUpSignColor;
   double cornerRadius;
 
   NavigationOverlay({
     super.key,
-    required this.mainInstructionImg,
     this.showFollowUpInstruction = false,
-    this.followUpInstruction,
-    this.followUpInstructionImg,
     this.mainSignColor = MyColors.mildBlue,
     this.followUpSignColor = MyColors.coldBlue,
     this.cornerRadius = 15
@@ -35,12 +32,15 @@ class NavigationOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     readNavigationProv = context.read<NavigationProvider>();
     watchNavigationProv = context.watch<NavigationProvider>();
+    readMapProv = context.read<MapProvider>();
+    watchMapProv = context.watch<MapProvider>();
 
     return Container(
       padding: EdgeInsets.all(15),
       child: Column(
         children: [
           directionsSignWidget(),
+
           SizedBox(height: MediaQuery.of(context).size.height - 310,),
           IntrinsicWidth(
             child: Material(
@@ -58,7 +58,7 @@ class NavigationOverlay extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    watchNavigationProv.route!.paths[0].edges[watchNavigationProv.pathCurrentIndex].attributes['name'] ?? 'Calle Desconocida',
+                    watchMapProv.computedRoute!.paths[0].directions[watchNavigationProv.directionIndex!].streetName,
                     style: TextStyle(
                       fontFamily: MyTextStyles.fontName,
                       fontWeight: FontWeight.w500,
@@ -74,7 +74,28 @@ class NavigationOverlay extends StatelessWidget {
       ),
     );
   }
+
+  Widget getDirectionImg(){
+    switch(watchMapProv.computedRoute!.paths[0].directions[watchNavigationProv.directionIndex!].endingAction){
+      case 'turn_left':
+        return Image.asset('assets/turn_left.png', color: MyColors.white,);
+      
+      case 'turn_right':
+        return Image.asset('assets/turn_right.png', color: MyColors.white,);
+      
+      case 'go_straight':
+        return Image.asset('assets/go_straight.png', color: MyColors.white,);
+    }
+    return SizedBox();
+  }
+
   Widget directionsSignWidget(){
+    String nextStreetName = "";
+    if (watchNavigationProv.directionIndex! >= watchMapProv.computedRoute!.paths[0].directions.length - 1){
+      nextStreetName = 'Llegando a tu destino';
+    } else {
+      nextStreetName = watchMapProv.computedRoute!.paths[0].directions[watchNavigationProv.directionIndex! + 1].streetName;
+    }
     return Material(
       elevation: 5,
       borderRadius: BorderRadius.only(
@@ -103,13 +124,14 @@ class NavigationOverlay extends StatelessWidget {
                 children: [
                   Expanded(
                     flex: 2,
-                    child: mainInstructionImg,
+                    child: getDirectionImg(),
                   ),
+                  SizedBox(width: 15,),
                   Expanded(
                     flex: 7,
                     child: Container(
                       child: Text(
-                        watchNavigationProv.route!.paths[0].edges[watchNavigationProv.pathCurrentIndex+1].attributes['name'] ?? 'Calle Desconocida',
+                        nextStreetName,
                         style: TextStyle(
                           fontFamily: MyTextStyles.fontName,
                           fontWeight: FontWeight.w600,

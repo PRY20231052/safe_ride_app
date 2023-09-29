@@ -9,38 +9,42 @@ import 'dart:developer';
 
 class SafeRideApi {
   final String baseURL = "http://10.0.2.2:8000/api";
-  // final String baseURL = "https://saferide-api.onrender.com/api";
+  // final String baseURL = 'https://aldair98.pythonanywhere.com/api';
 
   Future<RouteModel?> requestRoute(LatLng origin, LatLng destination) async {
-    var response = await http.post(
+    try {
+      var response = await http.post(
       Uri.parse('${baseURL}/routes/'),
-      headers: {
-        'Content-type': 'application/json',
-        'Accept': 'application/json',
-        'charset': 'utf-8',
-      },
-      body: jsonEncode({
-        "origin": {
-          "coordinates": {
-            "latitude": origin.latitude, 
-            "longitude": origin.longitude
-          }
+        headers: {
+          'Content-type': 'application/json',
+          'Accept': 'application/json',
         },
-        "waypoints": [
-          {
+        body: jsonEncode({
+          "origin": {
             "coordinates": {
-              "latitude": destination.latitude,
-              "longitude": destination.longitude
+              "latitude": origin.latitude, 
+              "longitude": origin.longitude
             }
-          }
-        ]
-      })
-    );
-    // log(response.body);
-    if (response.statusCode == 201) {
-      RouteModel? route = RouteModel.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
-      return route;
+          },
+          "waypoints": [
+            {
+              "coordinates": {
+                "latitude": destination.latitude,
+                "longitude": destination.longitude
+              }
+            }
+          ]
+        })
+      );
+      log(response.body);
+      if (response.statusCode == 201) {
+        RouteModel? route = RouteModel.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+        return route;
+      }
+      return null;
+      
+    } on Exception catch (e) {
+      rethrow;
     }
-    return null;
   }
 }

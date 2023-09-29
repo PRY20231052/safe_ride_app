@@ -20,22 +20,30 @@ class NavigationProvider with ChangeNotifier{
     this.mapProvider,
   });
   
-  RouteModel? _route;
-  int _pathCurrentIndex = 0;
-  bool _isInsideNodeRadius = false;
-  Polyline? _polyline;
-  late StreamSubscription<Position> _positionStream;
+  int? _pathCurrentIndex;
+  int? get pathCurrentIndex => _pathCurrentIndex;
+  set pathCurrentIndex(int? pathCurrentIndex){_pathCurrentIndex = pathCurrentIndex; notifyListeners();}
 
-  RouteModel? get route => _route;
-  int get pathCurrentIndex => _pathCurrentIndex;
+  int? _directionIndex;
+  int? get directionIndex => _directionIndex;
+  set directionIndex(int? directionIndex){_directionIndex = directionIndex; notifyListeners();}
+
+
+  bool _isInsideNodeRadius = false;
   bool get isInsideNodeRadius => _isInsideNodeRadius;
+  set isInsideNodeRadius(bool isInsideNodeRadius){_isInsideNodeRadius = isInsideNodeRadius; notifyListeners();}
+  
+  Polyline? _polyline;
   Polyline? get polyline => _polyline;
+  set polyline(Polyline? polyline){_polyline = polyline; notifyListeners();}
+
+  bool _lockOnCurrentPosition = false;
+  bool get lockOnCurrentPosition => _lockOnCurrentPosition;
+  set lockOnCurrentPosition(bool lockOnCurrentPosition){_lockOnCurrentPosition = lockOnCurrentPosition; notifyListeners();}
+  
+  late StreamSubscription<Position> _positionStream;
   StreamSubscription<Position> get positionStream => _positionStream;
 
-  set route(RouteModel? route){_route = route; notifyListeners();}
-  set pathCurrentIndex(int pathCurrentIndex){_pathCurrentIndex = pathCurrentIndex; notifyListeners();}
-  set isInsideNodeRadius(bool isInsideNodeRadius){_isInsideNodeRadius = isInsideNodeRadius; notifyListeners();}
-  set polyline(Polyline? polyline){_polyline = polyline; notifyListeners();}
 
   Future<void> initialize() async {
     _positionStream = Geolocator.getPositionStream(
@@ -62,69 +70,67 @@ class NavigationProvider with ChangeNotifier{
     });
   }
 
-
   void startNavigation() {
-    if (_route != null){
-      // mode = Modes.navigation;
+    // we require that paths only have one element, the selected one.
+    if (mapProvider!.computedRoute != null && mapProvider!.computedRoute!.paths.length == 1){
       _pathCurrentIndex = 0;
+      _directionIndex = 0;
+      _lockOnCurrentPosition = true;
+      log('STARTING NAVIGATION');
     }
   }
 
   void handleNavigationProgress(){
-    //////////////////////////////////////////
-    log('path nodes len ${_route!.paths[0].nodes.length}');
-    log('path edges len ${_route!.paths[0].edges.length}');
-    
-    var polylineIndex = getPolylineIndexByLatLng(
+    int polylineIndex = getPolylineIndexByLatLng(
       _polyline!,
-      LatLng(mapProvider!.currentPosition.latitude, mapProvider!.currentPosition.longitude),
+      LatLng(
+        mapProvider!.currentPosition.latitude,
+        mapProvider!.currentPosition.longitude
+      ),
     );
-    log('polyline index ${polylineIndex}/${_polyline!.points.length}');
-    //////////////////////////////////////////
+    log('polyline index ${polylineIndex}/${_polyline!.points.length - 1}');
 
-    double nodeThresholdRadius = 5;
+    for (final (i, direction) in mapProvider!.computedRoute!.paths[0].directions.indexed){
+      if(direction.coveredPolylinePointsIndexes.contains(polylineIndex)){
+        directionIndex = i;
+      }
+    }
+    log('direction index $directionIndex/${mapProvider!.computedRoute!.paths[0].directions.length - 1}');
+
 
     if(polylineIndex != -1){
-
-      log('CURRENT INDEX: $_pathCurrentIndex/${_route!.paths[0].nodes.length}');
-      for (var i = _pathCurrentIndex + 1; i < _route!.paths[0].nodes.length; i++){
+      // log('CURRENT INDEX: $_pathCurrentIndex/${mapProvider!.computedRoute!.paths[0].nodes.length}');
+      for (var i = _pathCurrentIndex! + 1; i < mapProvider!.computedRoute!.paths[0].nodes.length; i++){
         double distance = computeDistanceBetweenPoints(
           LatLng(mapProvider!.currentPosition.latitude, mapProvider!.currentPosition.longitude),
-          LatLng(_route!.paths[0].nodes[i].latitude, _route!.paths[0].nodes[i].longitude)
+          LatLng(mapProvider!.computedRoute!.paths[0].nodes[i].latitude, mapProvider!.computedRoute!.paths[0].nodes[i].longitude)
         );
-        i == 1 ? log('Distance to next node: $distance') : null;
-        // if we go pass the node's threshold radius
-        if (!_isInsideNodeRadius && distance <= nodeThresholdRadius){
-          _isInsideNodeRadius = true;
-          // we have landed into the node so we have to now go to the next step
-          log('Arrived to node $i/${_route!.paths[0].nodes.length}  Distance to center of node: $distance');
-          break;
-        }
-        // for the inmidiate next node, check if we are leaving the node radius to update the current node status
-        if (i == _pathCurrentIndex+1 && _isInsideNodeRadius && distance > nodeThresholdRadius){
-          _isInsideNodeRadius = false;
-          _pathCurrentIndex = i;
-          log('Leaving node $i Distance to center of node: $distance');
-          break;
-        }
       }
     } else {
       log('Deviated from path!');
       // Re-compute a new route from current position to the rest of waypoints
-      
     }
   }
   
   void cancelNavigation() {
     mapProvider!.mode = Modes.waypointsSelection;
-    _route = null;
+    mapProvider!.computedRoute = null;
+    _lockOnCurrentPosition = false;
     mapProvider!.clearDestination();
+    notifyListeners();
   }
 
-  void computeAlternativeRoutes() {
-    log(mapProvider!.mode.toString());
-    // for (var edge in route!.pathEdges){
-    //   log(edge.attributes.toString());
-    // }
+  Future<void> computeAlternativeRouteFromCurrentPosition() async {
+    _lockOnCurrentPosition = false;
+    // mapProvider!.mode = Modes.routeSelection;
+    // LocationModel ori = mapProvider!.origin!;
+    // LocationModel des = mapProvider!.destination!;
+    // cancelNavigation();
+    // mapProvider!.origin = ori;
+    // mapProvider!.destination = des;
+    log('computing');
+    var a = await mapProvider!.computeRoute();
+    log('done computing');
+    // notifyListeners();
   }
 }

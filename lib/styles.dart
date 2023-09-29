@@ -60,25 +60,25 @@ class MyTextStyles {
   static const TextStyle h1 = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w600,
-    fontSize: 23,
+    fontSize: 25,
     color: MyColors.black,
   );
   static const TextStyle h2 = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w500,
-    fontSize: 20,
+    fontSize: 21,
     color: MyColors.black,
   );
   static const TextStyle h3 = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w400,
-    fontSize: 17,
+    fontSize: 18,
     color: MyColors.black,
   );
   static const TextStyle h4 = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w300,
-    fontSize: 15,
+    fontSize: 16,
     color: MyColors.black,
   );
   static const TextStyle body = TextStyle(
@@ -92,15 +92,15 @@ class MyTextStyles {
     fontFamily: fontName,
     fontWeight: FontWeight.w700,
     fontSize: 18,
-    letterSpacing: 1.25,
+    letterSpacing: 1,
     color: MyColors.white,
   );
 
   static const TextStyle button2 = TextStyle(
     fontFamily: fontName,
     fontWeight: FontWeight.w600,
-    fontSize: 14,
-    letterSpacing: 1.25,
+    fontSize: 16,
+    letterSpacing: 0.5,
     color: MyColors.white,
   );
 

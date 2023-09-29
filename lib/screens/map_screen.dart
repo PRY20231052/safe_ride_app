@@ -87,7 +87,8 @@ class _MapScreenState extends State<MapScreen> {
 
   void updateMapCameraPosition({LatLng? target}){
     // ??= means if target is null then assign...
-    target ??= watchMapProv.mode == Modes.navigation ? readNavigationProv.route!.origin.coordinates : readMapProv.origin!.coordinates;
+    target ??= watchMapProv.mode == Modes.navigation && watchNavigationProv.lockOnCurrentPosition ? 
+    LatLng(readMapProv.currentPosition.latitude, readMapProv.currentPosition.longitude) : readMapProv.origin!.coordinates;
     googleMapsController.animateCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(
@@ -187,6 +188,16 @@ class _MapScreenState extends State<MapScreen> {
     readNavigationProv = context.read<NavigationProvider>();
     watchNavigationProv = context.watch<NavigationProvider>();
 
+    if (watchNavigationProv.lockOnCurrentPosition){
+      log('Following current position');
+      updateMapCameraPosition(
+        target: LatLng(
+          watchMapProv.currentPosition.latitude,
+          watchMapProv.currentPosition.longitude
+        ),
+      );
+    }
+
     return watchMapProv.isLoading ? MyLoadingScreen() : Scaffold(
       backgroundColor: MyColors.white,
       body: SafeArea(
@@ -226,7 +237,6 @@ class _MapScreenState extends State<MapScreen> {
               },
             ),
             watchMapProv.mode != Modes.navigation ? Container() : NavigationOverlay(
-              mainInstructionImg: Image.asset('assets/turn_left.png', color: MyColors.white,),
               showFollowUpInstruction: false,
             ),
             DraggableScrollableSheet(
@@ -400,17 +410,17 @@ class _MapScreenState extends State<MapScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
+                iconSize: 60,
                 onPressed: (){
                   readNavigationProv.cancelNavigation();
+                  updateDraggableScrollableSheetSizes();
                   draggableSheetController.animateTo(
                     dssMinChildSize,
                     duration: Duration(milliseconds : 100),
                     curve: Curves.linearToEaseOut,
                   );
                   updateMapCameraPosition();
-                  updateDraggableScrollableSheetSizes();
                 },
-                iconSize: 60,
                 icon: Image.asset(
                   'assets/cancel_icon.png',
                   color: MyColors.red,
@@ -418,13 +428,23 @@ class _MapScreenState extends State<MapScreen> {
               ),
               Column(
                 children: [
-                  Text('${(watchNavigationProv.route!.paths[0].etaSeconds/60).toStringAsFixed(0)} mins', style: MyTextStyles.h1,),
-                  Text('${(watchNavigationProv.route!.paths[0].distanceMeters/1000).toStringAsFixed(1)} km - eta time', style: MyTextStyles.h2,),
+                  Text('${(watchMapProv.computedRoute!.paths[0].etaSeconds/60).toStringAsFixed(0)} mins', style: MyTextStyles.h1,),
+                  Text('${(watchMapProv.computedRoute!.paths[0].distanceMeters/1000).toStringAsFixed(1)} km - eta time', style: MyTextStyles.h3,),
                 ],
               ),
               IconButton(
-                onPressed: readNavigationProv.computeAlternativeRoutes,
                 iconSize: 60,
+                onPressed: () async {
+                  // await readNavigationProv.computeAlternativeRouteFromCurrentPosition();
+                  await readMapProv.computeRoute();
+                  updateDraggableScrollableSheetSizes();
+                  draggableSheetController.animateTo(
+                    dssSnapSizes[0],
+                    duration: Duration(milliseconds : 100),
+                    curve: Curves.linearToEaseOut,
+                  );
+                  // updateMapCameraPosition();
+                },
                 icon: Image.asset(
                   'assets/alternative_routes_icon.png',
                   color: MyColors.mainBlue,
@@ -469,7 +489,7 @@ class _MapScreenState extends State<MapScreen> {
         },
       );
     }
-    else if (watchMapProv.mode == Modes.navigation){
+    else if (watchMapProv.mode == Modes.navigation && watchMapProv.computedRoute != null){
       return Container(
         //color: MyColors.red,
         height: 700, // ReorderableListView needs to be inside a Height Container, otherwise it rashes the app
@@ -478,11 +498,11 @@ class _MapScreenState extends State<MapScreen> {
             log('$oldIndex, $newIndex');
           },
           children: List.generate(
-            watchNavigationProv.route!.waypoints.length,
+            watchMapProv.computedRoute!.waypoints.length,
             (index) => ListTile(
               key: Key(index.toString()),
               tileColor: MyColors.mainBlue,
-              title: Text('${watchNavigationProv.route!.waypoints[index].address}', style: MyTextStyles.h3,),
+              title: Text('${watchMapProv.computedRoute!.waypoints[index].address}', style: MyTextStyles.h3,),
               trailing: Icon(Icons.drag_handle_rounded),
             ),
           ),
@@ -524,7 +544,7 @@ class _MapScreenState extends State<MapScreen> {
       child: Row(
         children: [
           Expanded(
-            flex: 6,
+            flex: 8,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -554,7 +574,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
           Expanded(
-            flex: 4,
+            flex: 6,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -572,26 +592,29 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                   ],
                 ),
-                SizedBox(height: 2,),
+                SizedBox(height: 8,),
                 Container(
                   width: double.infinity,
+                  height: 40,
                   child: ElevatedButton(
                     style: MyButtonStyles.primary,
                     child: Text('INICIAR RUTA', style: MyTextStyles.button2),
                     onPressed: (){
-                      // VERIFY THAT THIS WORKS
-                      readNavigationProv.route = readMapProv.computedRoute!;
+                      // Removing the rest of unselected routes, just to leave the selected one
+                      readMapProv.computedRoute!.paths = [readMapProv.computedRoute!.paths[pathIndex]];
+                      // Since we only hace one path in paths, this will get that polyline
                       readNavigationProv.polyline = getMapPolylines().first;
                 
-                      readNavigationProv.route!.waypoints = [
+                      readMapProv.computedRoute!.waypoints = [
                         readMapProv.destination!,
                         readMapProv.destination!,
                         readMapProv.destination!,
                       ]; // FOR TESTING ONLY
+
                       readMapProv.mode = Modes.navigation;
-                      updateMapCameraPosition(
-                        target: readNavigationProv.route!.origin.coordinates,
-                      );
+                      // updateMapCameraPosition(
+                      //   target: readMapProv.computedRoute!.origin.coordinates,
+                      // );
                       updateDraggableScrollableSheetSizes();
                       draggableSheetController.animateTo(
                         dssMinChildSize,

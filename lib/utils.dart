@@ -39,7 +39,7 @@ int getPolylineIndexByLatLng(Polyline polyline, LatLng latlng){
     [for (var point in polyline.points) Point(point.latitude, point.longitude)],
     false,
     false,
-    10,
+    20,
   );
 }
 

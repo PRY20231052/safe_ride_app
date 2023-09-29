@@ -162,6 +162,19 @@ class MapProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> computeAlternativeRouteFromCurrentPosition() async {
+    _isComputingRoute = true;
+    notifyListeners();
+    _computedRoute = await _safeRideApi.requestRoute(
+      LatLng(_currentPosition.latitude, _currentPosition.longitude),
+      _destination!.coordinates,
+    );
+    _isComputingRoute = false;
+    // _mode = Modes.routeSelection;
+    // log('notifying');
+    // notifyListeners();
+  }
+
   clearDestination(){
     _computedRoute = null;
     _destination = null;

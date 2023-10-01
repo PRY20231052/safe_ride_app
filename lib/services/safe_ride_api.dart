@@ -12,6 +12,10 @@ class SafeRideApi {
   // final String baseURL = 'https://aldair98.pythonanywhere.com/api';
 
   Future<RouteModel?> requestRoute(LatLng origin, List<LatLng> waypoints) async {
+    log('origin: ${origin}');
+    for (var (i, way) in waypoints.indexed){
+      log('waypoint $i: ${way}');
+    }
     try {
       var response = await http.post(
       Uri.parse('${baseURL}/routes/'),
@@ -37,7 +41,7 @@ class SafeRideApi {
           ]
         })
       );
-      log(response.body);
+      // log(response.body);
       if (response.statusCode == 201) {
         RouteModel? route = RouteModel.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
         return route;

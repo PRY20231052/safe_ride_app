@@ -75,16 +75,24 @@ class MapProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<LocationModel?> fetchLocationByLatLng(double latitude, double longitude) async {
+  Future<LocationModel?> fetchLocationByLatLng(LatLng latLng) async {
     var response = await _geocodingApi.searchByLocation(
-      Location(lat: latitude, lng: longitude)
+      Location(lat: latLng.latitude, lng: latLng.longitude)
     );
     if (response.isOkay){
-      // log(response.results.first.placeId);
-      return LocationModel(
-        coordinates: LatLng(latitude, longitude),
-        address: response.results.first.formattedAddress,
-      );
+      for (var result in response.results){
+        log('Found IDS');
+        log('id: ${result.placeId}: ${result.formattedAddress}');
+      }
+      var detailsResponse = await _placesApi.getDetailsByPlaceId(response.results.first.placeId);
+      if (detailsResponse.isOkay){
+        log('DETAILS for first: ${detailsResponse.result.name}');
+        return LocationModel(
+          coordinates: latLng,
+          name: detailsResponse.result.name,
+          address: response.results.first.formattedAddress,
+        );
+      }
     }
     return null;
   }

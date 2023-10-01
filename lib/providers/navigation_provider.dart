@@ -100,14 +100,15 @@ class NavigationProvider with ChangeNotifier{
 
     if(polylinePointIndex == -1){
       log('Deviated from path!');
-      
-    } else if (polylinePointIndex >= currentPolyline.points.length - 1){
+    
+    // If we have reached the end of the current sub Path
+    } else if (polylinePointIndex >= currentPolyline.points.length - 2){
       if (_currentSubPathIndex! >= _polylines.length - 1){
         // no more polylines to travel
         cancelNavigation();
       } else {
         // finished subPath, go to next sub path
-        _currentSubPathIndex = _polylines.length + 1;
+        _currentSubPathIndex = _currentSubPathIndex! + 1;
         _directionIndex = 0;
       }
     } else{

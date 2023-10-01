@@ -29,10 +29,6 @@ class _MapScreenState extends State<MapScreen> {
   late NavigationProvider watchNavigationProv;
   late NavigationProvider readNavigationProv;
 
-  // FLAGS
-  bool modifyOrigin = false;
-  bool modifyDestination = true;
-
   // CONTROLLERS
   late GoogleMapController googleMapsController;
   TextEditingController originInputController = TextEditingController();
@@ -40,7 +36,7 @@ class _MapScreenState extends State<MapScreen> {
   DraggableScrollableController draggableSheetController = DraggableScrollableController();
 
   // DraggableScrollableSheet parameters
-  int highlightedPolylineIndex = 0;
+  int selectedRouteOptionIndex = 0;
   double dssMinChildSize = 0.1;
   double dssInitialChildSize = 0.30;
   List<double> dssSnapSizes = [0.30];
@@ -113,45 +109,37 @@ class _MapScreenState extends State<MapScreen> {
     // }
   }
 
-  allowOriginSelection() {
-    modifyDestination = false;
-    modifyOrigin = true;
-  }
-  allowDestinationSelection() {
-    modifyDestination = true;
-    modifyOrigin = false;
-  }
-
-  Future<void> dropMarker(position) async {
-
+  Future<void> dropMarker({LatLng? latLngPoint, LocationModel? location}) async {
+    // You can either provide a latlng point and it will request the rest of the location details'
+    // or provide the location with full details for faster response
     readMapProv.mode = Modes.waypointsSelection;
     readMapProv.searchResults = [];
     readMapProv.computedRoute = null;
     updateDraggableScrollableSheetSizes();
 
-    LocationModel? location;
-
-    if (modifyDestination) {
-      location = await readMapProv.fetchLocationByLatLng(
-        position.latitude, position.longitude
-      );
+    if(latLngPoint != null && location == null){
+      location = await readMapProv.fetchLocationByLatLng(latLngPoint);
       readMapProv.waypoints.add(location!);
-    } else {
-      modifyDestination = false;
-      modifyOrigin = false;
     }
-    updateMapCameraPosition(target: LatLng(position.latitude, position.longitude));
+    updateMapCameraPosition(target: location!.coordinates);
     updateTextInputs();
-    showLocationDialog(location!);
+    showLocationDialog(location);
+    setState(() {});
   }
 
   Set<Marker> getMapMarkers(){
+    BitmapDescriptor blueMarker = BitmapDescriptor.defaultMarkerWithHue(210);
+    // BitmapDescriptor purpleMarker = BitmapDescriptor.defaultMarkerWithHue(290);
+    // BitmapDescriptor magentaMarker = BitmapDescriptor.defaultMarkerWithHue(160);
+    // BitmapDescriptor yellowMarker = BitmapDescriptor.defaultMarkerWithHue(50);
+    // List<BitmapDescriptor> markers = [blueMarker, purpleMarker, magentaMarker, yellowMarker, BitmapDescriptor.defaultMarker];
+
     return watchMapProv.waypoints.isEmpty ? {} : {
-      for (var (i,waypoint) in watchMapProv.waypoints.indexed)
+      for (var (i, waypoint) in watchMapProv.waypoints.indexed)
         Marker(
           markerId: MarkerId('marker_$i'),
           position: waypoint.coordinates,
-          icon: BitmapDescriptor.defaultMarker,
+          icon: i == watchMapProv.waypoints.length - 1 ? BitmapDescriptor.defaultMarker : blueMarker, //
           onTap: () async {
             await showLocationDialog(waypoint);
           },
@@ -166,18 +154,20 @@ class _MapScreenState extends State<MapScreen> {
     // polylines are drawed in order so the last one is the one being seen
     // so we are reversing it so the first path, the generated one, is on top
     Set<Polyline> polylines = {};
+    int polyId = 0;
     for (var (i, option) in readMapProv.computedRoute!.options.indexed){
       for (var subPath in option){
         polylines.add(
           Polyline(
-            polylineId: PolylineId(i.toString()),
-            color: i == highlightedPolylineIndex ? MyColors.coldBlue : MyColors.paleBlue,
+            polylineId: PolylineId(polyId.toString()),
+            color: i == selectedRouteOptionIndex ? MyColors.coldBlue : MyColors.paleBlue,
             jointType: JointType.round,
             endCap: Cap.roundCap,
-            width: watchMapProv.mode == Modes.navigation ? 15 : 7,
+            width: watchMapProv.mode == Modes.navigation ? 15 : i == selectedRouteOptionIndex ? 7:5,
             points: subPath.polylinePoints,
           ),
         );
+        polyId+=1;
       }
     }
     return polylines;
@@ -229,7 +219,7 @@ class _MapScreenState extends State<MapScreen> {
                 }
               },
               onLongPress: (position) {
-                dropMarker(position);
+                dropMarker(latLngPoint: LatLng(position.latitude, position.longitude),);
               },
               onCameraMove: (position) {
                 draggableSheetController.animateTo(
@@ -299,6 +289,17 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  void exitNavigation(){
+    readNavigationProv.cancelNavigation();
+    updateDraggableScrollableSheetSizes();
+    draggableSheetController.animateTo(
+      dssMinChildSize,
+      duration: Duration(milliseconds : 100),
+      curve: Curves.linearToEaseOut,
+    );
+    updateMapCameraPosition();
+  }
+
   Widget navigationContent(){
     List<PathModel> currentRoute = watchMapProv.computedRoute!.options[0];
     return Column(
@@ -308,16 +309,7 @@ class _MapScreenState extends State<MapScreen> {
           children: [
             IconButton(
               iconSize: 60,
-              onPressed: (){
-                readNavigationProv.cancelNavigation();
-                updateDraggableScrollableSheetSizes();
-                draggableSheetController.animateTo(
-                  dssMinChildSize,
-                  duration: Duration(milliseconds : 100),
-                  curve: Curves.linearToEaseOut,
-                );
-                updateMapCameraPosition();
-              },
+              onPressed: exitNavigation,
               icon: Image.asset(
                 'assets/cancel_icon.png',
                 color: MyColors.red,
@@ -395,7 +387,7 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ),
                       ),
-                      onTap: allowOriginSelection,
+                      onTap: (){},
                     ),
                     SizedBox(height: 10,),
                     TextField(
@@ -722,20 +714,21 @@ class _MapScreenState extends State<MapScreen> {
       padding: EdgeInsets.only(left: 10, top: 10, right: 10),
       child: GestureDetector(
         onTap: () async {
-          FocusManager.instance.primaryFocus?.unfocus();//Closese the keyboard
-          showLocationDialog(place);
+          dropMarker(location: place);
+          // FocusManager.instance.primaryFocus?.unfocus();//Closese the keyboard
+          // showLocationDialog(place);
           
           // readMapProv.waypoints.add(place);
           // readMapProv.searchResults = [];
           // await readMapProv.computeRoute();
 
-          updateTextInputs();
-          updateDraggableScrollableSheetSizes();
-          draggableSheetController.animateTo(
-            dssMinChildSize,
-            duration: Duration(milliseconds : 100),
-            curve: Curves.linearToEaseOut,
-          );
+          // updateTextInputs();
+          // updateDraggableScrollableSheetSizes();
+          // draggableSheetController.animateTo(
+          //   dssMinChildSize,
+          //   duration: Duration(milliseconds : 100),
+          //   curve: Curves.linearToEaseOut,
+          // );
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -752,6 +745,87 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> showLocationDialog(LocationModel location) async {
+    List<Widget> actions = [
+      Container(
+        width: double.infinity,
+        child: ElevatedButton(
+          style: MyButtonStyles.primaryNoElevation,
+          child: Text('Buscar Rutas', style: MyTextStyles.button2,),
+          onPressed: () async {
+            if (readMapProv.origin != null && readMapProv.waypoints.isNotEmpty) {
+              Navigator.pop(context);
+              await readMapProv.computeRoute();
+              updateTextInputs();
+              updateDraggableScrollableSheetSizes();
+              draggableSheetController.animateTo(
+                dssSnapSizes[0],
+                duration: Duration(milliseconds : 100),
+                curve: Curves.linearToEaseOut,
+              );
+            }
+            else {
+              Fluttertoast.showToast(
+                msg: "Defina al menos un punto de destino",
+                toastLength: Toast.LENGTH_LONG
+              );
+            }
+          },
+        ),
+      ),
+    ];
+    if(watchMapProv.waypoints.length > 1){
+      actions.addAll([
+        Container(
+          width: double.infinity,
+          child: OutlinedButton(
+            style: MyButtonStyles.outlined,
+            child: Text('Añadir como parada', style: MyTextStyles.outlined,),
+            onPressed: () {
+              Navigator.pop(context);
+              readMapProv.waypoints.insert(0, location);
+              // updateTextInputs();
+              // updateDraggableScrollableSheetSizes();
+              // draggableSheetController.animateTo(
+              //   dssSnapSizes[0],
+              //   duration: Duration(milliseconds : 100),
+              //   curve: Curves.linearToEaseOut,
+              // );
+              
+              Fluttertoast.showToast(
+                msg: "Ubicación agregada como parada",
+                toastLength: Toast.LENGTH_LONG
+              );
+            },
+          ),
+        ),
+        Container(
+          width: double.infinity,
+          child: OutlinedButton(
+            style: MyButtonStyles.outlined,
+            child: Text('Añadir como nuevo destino', style: MyTextStyles.outlined,),
+            onPressed: () {
+              Navigator.pop(context);
+              readMapProv.waypoints.add(location);
+              // updateTextInputs();
+              // updateDraggableScrollableSheetSizes();
+              // draggableSheetController.animateTo(
+              //   dssSnapSizes[0],
+              //   duration: Duration(milliseconds : 100),
+              //   curve: Curves.linearToEaseOut,
+              // );
+              
+              Fluttertoast.showToast(
+                msg: "Ubicación agregada como nuevo destino",
+                toastLength: Toast.LENGTH_LONG
+              );
+            },
+          ),
+        ),
+      ]);
+    }
+
+    
+
     showDialog(
       anchorPoint: Offset(double.maxFinite, 0),
       barrierColor: Color(0x00000000),
@@ -779,9 +853,9 @@ class _MapScreenState extends State<MapScreen> {
                 borderRadius: BorderRadius.circular(15),
               ),
               elevation: 30,
-              insetPadding: EdgeInsets.only(top: 175), // NO TOCAR
-              contentPadding: EdgeInsets.only(left: 20, top: 20, right: 20, bottom: 5),
-              actionsPadding: EdgeInsets.all(8),
+              insetPadding: EdgeInsets.only(top: 300), // NO TOCAR
+              contentPadding: EdgeInsets.only(left: 20, top: 15, right: 20),
+              actionsPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
               content: Wrap(
                 direction: Axis.vertical,
                 children: [
@@ -805,75 +879,8 @@ class _MapScreenState extends State<MapScreen> {
               ),
               actionsAlignment: MainAxisAlignment.spaceEvenly,
               actions: [
-                // ElevatedButton(
-                //   style: MyButtonStyles.secondary,
-                //   child: Text('Estrella'),
-                //   onPressed: (){
-                //     Navigator.pop(context);
-                //   },
-                // ),
-                ElevatedButton(
-                  style: MyButtonStyles.secondary,
-                  child: Text('Buscar Rutas'),
-                  onPressed: () async {
-                    if (readMapProv.origin != null && readMapProv.waypoints.isNotEmpty) {
-                      Navigator.pop(context);
-                      await readMapProv.computeRoute();
-                      updateTextInputs();
-                      updateDraggableScrollableSheetSizes();
-                      draggableSheetController.animateTo(
-                        dssSnapSizes[0],
-                        duration: Duration(milliseconds : 100),
-                        curve: Curves.linearToEaseOut,
-                      );
-                    }
-                    else {
-                      Fluttertoast.showToast(
-                        msg: "Defina al menos un punto de destino",
-                        toastLength: Toast.LENGTH_LONG
-                      );
-                    }
-                  },
-                ),
-                ElevatedButton(
-                  style: MyButtonStyles.secondary,
-                  child: Text('Añadir como parada'),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    readMapProv.waypoints.insert(0, location);
-                    // updateTextInputs();
-                    // updateDraggableScrollableSheetSizes();
-                    // draggableSheetController.animateTo(
-                    //   dssSnapSizes[0],
-                    //   duration: Duration(milliseconds : 100),
-                    //   curve: Curves.linearToEaseOut,
-                    // );
-                    
-                    Fluttertoast.showToast(
-                      msg: "Ubicación agregada como parada",
-                      toastLength: Toast.LENGTH_LONG
-                    );
-                  },
-                ),
-                ElevatedButton(
-                  style: MyButtonStyles.secondary,
-                  child: Text('Añadir como nuevo destino'),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    readMapProv.waypoints.add(location);
-                    // updateTextInputs();
-                    // updateDraggableScrollableSheetSizes();
-                    // draggableSheetController.animateTo(
-                    //   dssSnapSizes[0],
-                    //   duration: Duration(milliseconds : 100),
-                    //   curve: Curves.linearToEaseOut,
-                    // );
-                    
-                    Fluttertoast.showToast(
-                      msg: "Ubicación agregada como nuevo destino",
-                      toastLength: Toast.LENGTH_LONG
-                    );
-                  },
+                Column(
+                  children: actions,
                 ),
               ],
             ),

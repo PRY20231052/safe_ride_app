@@ -31,10 +31,11 @@ class MapProvider with ChangeNotifier {
   LocationModel? _origin;
   List<LocationModel> _waypoints = [];
   List<LocationModel> _searchResults = [];
-  RouteModel? _computedRoute;
+  RouteModel? _route;
   bool _currentPositionAsOrigin = true;
   bool _isComputingRoute = false;
   bool _isLoading = true;
+  
   // READ ONLY ATTRIBUTES
   late Position _currentPosition;
 
@@ -44,7 +45,7 @@ class MapProvider with ChangeNotifier {
   LocationModel? get origin => _origin;
   List<LocationModel> get waypoints => _waypoints;
   List<LocationModel> get searchResults => _searchResults;
-  RouteModel? get computedRoute => _computedRoute;
+  RouteModel? get route => _route;
   bool get currentPositionAsOrigin => _currentPositionAsOrigin;
   bool get isComputingRoute => _isComputingRoute;
   bool get isLoading => _isLoading;
@@ -55,7 +56,7 @@ class MapProvider with ChangeNotifier {
   set origin(LocationModel? origin){_origin = origin; notifyListeners(); }
   set waypoints(List<LocationModel> waypoints) {_waypoints = waypoints; notifyListeners();}
   set searchResults(List<LocationModel> searchResults){_searchResults = searchResults; notifyListeners(); }
-  set computedRoute(RouteModel? computedRoute){_computedRoute = computedRoute; notifyListeners(); }
+  set route(RouteModel? route){_route = route; notifyListeners(); }
   set currentPositionAsOrigin(bool currentPositionAsOrigin){_currentPositionAsOrigin = currentPositionAsOrigin; notifyListeners(); }
   set isComputingRoute(bool isComputingRoute){_isComputingRoute = isComputingRoute; notifyListeners(); }
   set isLoading(bool isLoading){_isLoading = isLoading; notifyListeners();}
@@ -80,10 +81,6 @@ class MapProvider with ChangeNotifier {
       Location(lat: latLng.latitude, lng: latLng.longitude)
     );
     if (response.isOkay){
-      for (var result in response.results){
-        log('Found IDS');
-        log('id: ${result.placeId}: ${result.formattedAddress}');
-      }
       var detailsResponse = await _placesApi.getDetailsByPlaceId(response.results.first.placeId);
       if (detailsResponse.isOkay){
         log('DETAILS for first: ${detailsResponse.result.name}');
@@ -158,7 +155,7 @@ class MapProvider with ChangeNotifier {
   Future<void> computeRoute() async {
     _isComputingRoute = true;
     notifyListeners();
-    _computedRoute = await _safeRideApi.requestRoute(
+    _route = await _safeRideApi.requestRoute(
       _origin!.coordinates,
       [for(var waypoint in _waypoints) waypoint.coordinates],
     );
@@ -170,7 +167,7 @@ class MapProvider with ChangeNotifier {
   Future<void> computeAlternativeRouteFromCurrentPosition() async {
     _isComputingRoute = true;
     notifyListeners();
-    _computedRoute = await _safeRideApi.requestRoute(
+    _route = await _safeRideApi.requestRoute(
       LatLng(_currentPosition.latitude, _currentPosition.longitude),
       [for(var waypoint in _waypoints) waypoint.coordinates],
     );
@@ -181,7 +178,7 @@ class MapProvider with ChangeNotifier {
   }
 
   clearDestination(){
-    _computedRoute = null;
+    _route = null;
     _waypoints = [];
     _searchResults = [];
     notifyListeners();

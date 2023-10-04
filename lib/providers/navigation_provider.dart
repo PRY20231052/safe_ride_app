@@ -69,7 +69,7 @@ class NavigationProvider with ChangeNotifier{
 
   void startNavigation() {
     // we require that paths only have one element, the selected one.
-    if (mapProvider!.computedRoute != null && mapProvider!.computedRoute!.options.length == 1){
+    if (mapProvider!.route != null && mapProvider!.route!.pathOptions.length == 1){
       _currentSubPathIndex = 0;
       _directionIndex = 0;
       _lockOnCurrentPosition = true;
@@ -90,12 +90,12 @@ class NavigationProvider with ChangeNotifier{
     );
     log('polyline point index ${polylinePointIndex}/${currentPolyline.points.length - 1}');
 
-    for (final (i, direction) in mapProvider!.computedRoute!.options[0][_currentSubPathIndex!].directions.indexed){
+    for (final (i, direction) in mapProvider!.route!.pathOptions[0][_currentSubPathIndex!].directions.indexed){
       if(direction.coveredPolylinePointsIndexes.contains(polylinePointIndex)){
         _directionIndex = i;
       }
     }
-    log('direction index $_directionIndex/${mapProvider!.computedRoute!.options[0][_currentSubPathIndex!].directions.length - 1}');
+    log('direction index $_directionIndex/${mapProvider!.route!.pathOptions[0][_currentSubPathIndex!].directions.length - 1}');
 
 
     if(polylinePointIndex == -1){
@@ -129,7 +129,7 @@ class NavigationProvider with ChangeNotifier{
   
   void cancelNavigation() {
     mapProvider!.mode = Modes.waypointsSelection;
-    mapProvider!.computedRoute = null;
+    mapProvider!.route = null;
     _lockOnCurrentPosition = false;
     mapProvider!.clearDestination();
     notifyListeners();

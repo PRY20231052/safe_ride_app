@@ -40,6 +40,11 @@ class MyButtonStyles {
     elevation: 0,
     side: BorderSide(width: 1.5, color: MyColors.mainBlue),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+  );
+  static ButtonStyle outlinedRed = OutlinedButton.styleFrom(
+    elevation: 0,
+    side: BorderSide(width: 1.5, color: MyColors.red),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
   ); 
 }
 
@@ -114,6 +119,13 @@ class MyTextStyles {
     fontSize: 16,
     letterSpacing: 0.5,
     color: MyColors.mainBlue,
+  );
+  static const TextStyle outlinedRed = TextStyle(
+    fontFamily: fontName,
+    fontWeight: FontWeight.w600,
+    fontSize: 16,
+    letterSpacing: 0.5,
+    color: MyColors.red,
   );
 
   static const TextStyle hintTextStyle = TextStyle(

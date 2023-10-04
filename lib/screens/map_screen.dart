@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:safe_ride_app/utils/asset_to_bytes.dart';
 import 'package:safe_ride_app/models/location_model.dart';
 import 'package:safe_ride_app/models/path_model.dart';
 import 'package:safe_ride_app/my_widgets/my_loading_screen.dart';
@@ -32,14 +33,20 @@ class _MapScreenState extends State<MapScreen> {
   // CONTROLLERS
   late GoogleMapController googleMapsController;
   TextEditingController originInputController = TextEditingController();
-  TextEditingController destinationInputController = TextEditingController();
+  TextEditingController searchPlaceInputController = TextEditingController();
   DraggableScrollableController draggableSheetController = DraggableScrollableController();
+
+  Marker? tempMarker;
+  Set<Marker> mapMarkers = {};
+
+  // MARKERS
+  List<BitmapDescriptor> markerIcons = [];
 
   // DraggableScrollableSheet parameters
   int selectedRouteOptionIndex = 0;
-  double dssMinChildSize = 0.1;
-  double dssInitialChildSize = 0.30;
-  List<double> dssSnapSizes = [0.30];
+  double dssMinChildSize = 0.16;
+  double dssMainChildSize = 0.16;
+  List<double> dssSnapSizes = [0.16];
 
   @override
   initState() {
@@ -50,7 +57,12 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> asyncInit() async {
     log('Initializing...');
     await Provider.of<MapProvider>(context, listen: false).initialize();
-    await Provider.of<NavigationProvider>(context, listen: false).initialize();
+    await Provider.of<NavigationProvider>(context, listen: false).initialize(); 
+    markerIcons = [
+      for(var i=1; i < 10; i++)
+        BitmapDescriptor.fromBytes(await assetToBytes('assets/marker_red_$i.png', width: 85,))
+    ];
+    markerIcons.add(BitmapDescriptor.fromBytes(await assetToBytes('assets/marker_red.png', width: 85,)));
     updateTextInputs();
     log('Initialized!');
   }
@@ -65,18 +77,24 @@ class _MapScreenState extends State<MapScreen> {
   void updateDraggableScrollableSheetSizes(){
     switch(watchMapProv.mode) {
       case Modes.waypointsSelection:
-        dssMinChildSize = 0.1;
-        dssInitialChildSize = 0.29;
-        dssSnapSizes = [dssInitialChildSize];
+        if (watchMapProv.waypoints.length > 1){
+          dssMinChildSize = 0.24;
+          dssMainChildSize = 0.24;
+        }
+        else {
+          dssMinChildSize = 0.15;
+          dssMainChildSize = 0.15;
+        }
+        dssSnapSizes = [];
         break; // The switch statement must be told to exit, or it will execute every case.
       case Modes.routeSelection:
-        dssMinChildSize = 0.1;
-        dssInitialChildSize = 0.55;
-        dssSnapSizes = [dssInitialChildSize];
+        dssMinChildSize = 0.15;
+        dssMainChildSize = 0.43;
+        dssSnapSizes = [dssMainChildSize];
         break;
       case Modes.navigation:
         dssMinChildSize = 0.13;
-        dssInitialChildSize = dssMinChildSize;
+        dssMainChildSize = dssMinChildSize;
         dssSnapSizes = [];
         break;
     }
@@ -92,6 +110,7 @@ class _MapScreenState extends State<MapScreen> {
           target: target,
           zoom: readMapProv.mode == Modes.navigation ? 18 : 15,
           tilt: readMapProv.mode == Modes.navigation ? 50 : 0.0,
+          bearing: 180,
         ),
       ),
     );
@@ -112,50 +131,69 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> dropMarker({LatLng? latLngPoint, LocationModel? location}) async {
     // You can either provide a latlng point and it will request the rest of the location details'
     // or provide the location with full details for faster response
-    readMapProv.mode = Modes.waypointsSelection;
-    readMapProv.searchResults = [];
-    readMapProv.computedRoute = null;
-    updateDraggableScrollableSheetSizes();
 
-    if(latLngPoint != null && location == null){
-      location = await readMapProv.fetchLocationByLatLng(latLngPoint);
+    readMapProv.searchResults = [];
+    if (watchMapProv.waypoints.length >= 9){
+      Fluttertoast.showToast(
+        msg: "Máximo número de destinos alcanzados",
+        toastLength: Toast.LENGTH_LONG
+      );
+      return;
+    }
+    // readMapProv.mode = Modes.waypointsSelection;
+    // readMapProv.computedRoute = null;
+    // updateDraggableScrollableSheetSizes();
+
+    location ??= await readMapProv.fetchLocationByLatLng(latLngPoint!);
+    String? markerId;
+    if(watchMapProv.mode == Modes.routeSelection || watchMapProv.mode == Modes.navigation){
+      markerId = 'temp';
+      tempMarker = Marker(
+        markerId: MarkerId(markerId),
+        position: location!.coordinates,
+        icon: markerIcons.last,
+        onTap: () async {
+          await showMarkerDialog(location!, markerId!);
+        },
+      );
+    }
+    else if(watchMapProv.mode == Modes.waypointsSelection){
       readMapProv.waypoints.add(location!);
+      markerId = '${readMapProv.waypoints.length - 1}';
+      log('location added to waypoints');
     }
     updateMapCameraPosition(target: location!.coordinates);
     updateTextInputs();
-    showLocationDialog(location);
+    showMarkerDialog(location, markerId!);
     setState(() {});
   }
 
-  Set<Marker> getMapMarkers(){
-    BitmapDescriptor blueMarker = BitmapDescriptor.defaultMarkerWithHue(210);
-    // BitmapDescriptor purpleMarker = BitmapDescriptor.defaultMarkerWithHue(290);
-    // BitmapDescriptor magentaMarker = BitmapDescriptor.defaultMarkerWithHue(160);
-    // BitmapDescriptor yellowMarker = BitmapDescriptor.defaultMarkerWithHue(50);
-    // List<BitmapDescriptor> markers = [blueMarker, purpleMarker, magentaMarker, yellowMarker, BitmapDescriptor.defaultMarker];
-
-    return watchMapProv.waypoints.isEmpty ? {} : {
+  Future<void> updateMapMarkers() async {
+    mapMarkers = {
       for (var (i, waypoint) in watchMapProv.waypoints.indexed)
         Marker(
-          markerId: MarkerId('marker_$i'),
+          markerId: MarkerId('$i'),
           position: waypoint.coordinates,
-          icon: i == watchMapProv.waypoints.length - 1 ? BitmapDescriptor.defaultMarker : blueMarker, //
+          icon: markerIcons[i],
           onTap: () async {
-            await showLocationDialog(waypoint);
+            await showMarkerDialog(waypoint, '$i');
           },
         )
     };
+    if (watchMapProv.mode == Modes.routeSelection && tempMarker != null){
+      mapMarkers.add(tempMarker!);
+    }
   }
 
   Set<Polyline> getMapPolylines(){
-    if (readMapProv.computedRoute == null){
+    if (readMapProv.route == null){
       return {};
     }
     // polylines are drawed in order so the last one is the one being seen
     // so we are reversing it so the first path, the generated one, is on top
     Set<Polyline> polylines = {};
     int polyId = 0;
-    for (var (i, option) in readMapProv.computedRoute!.options.indexed){
+    for (var (i, option) in readMapProv.route!.pathOptions.indexed){
       for (var subPath in option){
         polylines.add(
           Polyline(
@@ -181,6 +219,9 @@ class _MapScreenState extends State<MapScreen> {
 
     readNavigationProv = context.read<NavigationProvider>();
     watchNavigationProv = context.watch<NavigationProvider>();
+
+    updateMapMarkers();
+    updateDraggableScrollableSheetSizes();
 
     if (watchNavigationProv.lockOnCurrentPosition){
       log('Following current position');
@@ -211,7 +252,7 @@ class _MapScreenState extends State<MapScreen> {
               onMapCreated: (controller) {
                 googleMapsController = controller;
               },
-              markers: getMapMarkers(),
+              markers: mapMarkers,
               polylines: getMapPolylines(),
               onTap: (position) {
                 if (readMapProv.mode == Modes.waypointsSelection){
@@ -220,6 +261,7 @@ class _MapScreenState extends State<MapScreen> {
               },
               onLongPress: (position) {
                 dropMarker(latLngPoint: LatLng(position.latitude, position.longitude),);
+                updateMapMarkers();
               },
               onCameraMove: (position) {
                 draggableSheetController.animateTo(
@@ -235,13 +277,13 @@ class _MapScreenState extends State<MapScreen> {
             ),
             DraggableScrollableSheet(
               controller: draggableSheetController,
-              initialChildSize: dssInitialChildSize,
+              initialChildSize: dssMainChildSize,
               minChildSize: dssMinChildSize,
               snap: true,
               snapSizes: dssSnapSizes,
               builder: (context, scrollController) {
                 return Container(
-                  padding: EdgeInsets.only(right: 16.0, top: 16.0, left: 16.0),
+                  padding: EdgeInsets.symmetric(horizontal: 17.0),
                   decoration: BoxDecoration(
                     color: MyColors.white,
                     borderRadius: BorderRadius.only(
@@ -254,6 +296,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: Column(
                       children: [
                         Container(
+                          margin: EdgeInsets.all(15),
                           width: 50,
                           height: 5,
                           decoration: BoxDecoration(
@@ -261,7 +304,6 @@ class _MapScreenState extends State<MapScreen> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        SizedBox(height: 10),
                         draggableScrollableSheetContent(),
                       ],
                     ),
@@ -301,8 +343,9 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget navigationContent(){
-    List<PathModel> currentRoute = watchMapProv.computedRoute!.options[0];
+    List<PathModel> currentRoute = watchMapProv.route!.pathOptions[0];
     return Column(
+      mainAxisAlignment: MainAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -351,11 +394,6 @@ class _MapScreenState extends State<MapScreen> {
   Widget waypointsRouteSelectionContent(){
     return Column(
       children: [
-        Text(
-          '¿A dónde quieres ir?',
-          style: MyTextStyles.h1,
-        ),
-        SizedBox(height: 20),
         Container(
           padding: EdgeInsets.symmetric(horizontal: 15, vertical: 15),
           decoration: BoxDecoration(
@@ -370,38 +408,38 @@ class _MapScreenState extends State<MapScreen> {
                 flex: 8,
                 child: Column(
                   children: [
+                    // TextField(
+                    //   controller: originInputController,
+                    //   style: MyTextStyles.inputTextStyle,
+                    //   readOnly: true,
+                    //   keyboardType: TextInputType.streetAddress,
+                    //   textAlignVertical: TextAlignVertical.center,
+                    //   decoration: Templates.locationInputDecoration(
+                    //     "Origen",
+                    //     Container(
+                    //       padding: EdgeInsets.all(10),
+                    //       height: 10,
+                    //       child: Image.asset(
+                    //         'assets/thin-target.png',
+                    //         color: MyColors.mainBlue,
+                    //       ),
+                    //     ),
+                    //   ),
+                    //   onTap: (){},
+                    // ),
+                    // SizedBox(height: 10,),
                     TextField(
-                      controller: originInputController,
+                      controller: searchPlaceInputController,
                       style: MyTextStyles.inputTextStyle,
-                      readOnly: true,
                       keyboardType: TextInputType.streetAddress,
                       textAlignVertical: TextAlignVertical.center,
                       decoration: Templates.locationInputDecoration(
-                        "Origen",
+                        "Buscar Ubicación",
                         Container(
                           padding: EdgeInsets.all(10),
                           height: 10,
                           child: Image.asset(
-                            'assets/thin-target.png',
-                            color: MyColors.mainBlue,
-                          ),
-                        ),
-                      ),
-                      onTap: (){},
-                    ),
-                    SizedBox(height: 10,),
-                    TextField(
-                      controller: destinationInputController,
-                      style: MyTextStyles.inputTextStyle,
-                      keyboardType: TextInputType.streetAddress,
-                      textAlignVertical: TextAlignVertical.center,
-                      decoration: Templates.locationInputDecoration(
-                        "Destino",
-                        Container(
-                          padding: EdgeInsets.all(10),
-                          height: 10,
-                          child: Image.asset(
-                            'assets/market.png',
+                            'assets/marker.png',
                             color: MyColors.mainBlue,
                           ),
                         ),
@@ -420,46 +458,70 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
               ),
-              Expanded(
-                flex: 1,
-                child: IconButton(
-                  icon: Icon(
-                    CupertinoIcons.arrow_2_squarepath,
-                    color: MyColors.grey,
-                    size: 30,
-                  ),
-                  onPressed: () {
-                    // if (origin != null && destination != null) {
-                    //   // swaping origin and destination
-                    //   final temp = origin;
-                    //   origin = destination;
-                    //   destination = temp;
-                    //   waypoints = [destination!];
-                    //   updateTextInputs();
-                    //   setState(() {});
-                    // }
-                  },
-                ),
-              ),
+              // Expanded(
+              //   flex: 1,
+              //   child: IconButton(
+              //     icon: Icon(
+              //       CupertinoIcons.arrow_2_squarepath,
+              //       color: MyColors.grey,
+              //       size: 30,
+              //     ),
+              //     onPressed: () {
+              //       // if (origin != null && destination != null) {
+              //       //   // swaping origin and destination
+              //       //   final temp = origin;
+              //       //   origin = destination;
+              //       //   destination = temp;
+              //       //   waypoints = [destination!];
+              //       //   updateTextInputs();
+              //       //   setState(() {});
+              //       // }
+              //     },
+              //   ),
+              // ),
             ],
           ),
         ),
+        
+        watchMapProv.mode == Modes.waypointsSelection && watchMapProv.waypoints.length > 1 ? Container(
+          margin: EdgeInsets.symmetric(vertical: 17),
+          height: 50,
+          width: double.infinity,
+          child: ElevatedButton(
+            style: MyButtonStyles.primary,
+            child: Text(
+              'BUSCAR RUTAS',
+              style: MyTextStyles.button1,
+            ),
+            onPressed: () async {
+              if(readMapProv.waypoints.length > 0){
+                await readMapProv.computeRoute();
+                updateTextInputs();
+                updateDraggableScrollableSheetSizes();
+                draggableSheetController.animateTo(
+                  dssSnapSizes[0],
+                  duration: Duration(milliseconds : 100),
+                  curve: Curves.linearToEaseOut,
+                );
+              }
+              else {
+                Fluttertoast.showToast(
+                  msg: "Defina al menos un punto de destino",
+                  toastLength: Toast.LENGTH_LONG
+                );
+              }
+            },
+          ),
+        ) : Container(),
+        watchMapProv.searchResults.isNotEmpty ? ListView.builder(
+          physics: NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          itemCount: searchPlaceInputController.text.isNotEmpty ? watchMapProv.searchResults.length : 0,
+          itemBuilder: (context, index){
+            return placeResultListTile(watchMapProv.searchResults[index]);
+          },
+        ) : Container(),
         SizedBox(height: 20),
-        // Container(
-        //   height: 50,
-        //   width: double.infinity,
-        //   child: ElevatedButton(
-        //     style: MyButtonStyles.primary,
-        //     child: Text(
-        //       'BUSCAR RUTAS',
-        //       style: MyTextStyles.primaryButton,
-        //     ),
-        //     onPressed: () {
-        //       computeRoutes();
-        //     },
-        //   ),
-        // ),
-        // SizedBox(height: 20),
         dssComplementaryBottomContent(),
       ],
     );
@@ -467,21 +529,11 @@ class _MapScreenState extends State<MapScreen> {
 
 
   Widget dssComplementaryBottomContent(){
-    if (watchMapProv.mode == Modes.waypointsSelection && watchMapProv.searchResults.isNotEmpty){
-      return ListView.builder(
-        physics: NeverScrollableScrollPhysics(),
-        shrinkWrap: true,
-        itemCount: watchMapProv.searchResults.length,
-        itemBuilder: (context, index){
-          return placeResultListTile(watchMapProv.searchResults[index]);
-        },
-      );
-    }
-    else if (watchMapProv.mode == Modes.routeSelection && watchMapProv.computedRoute != null){
+    if (watchMapProv.mode == Modes.routeSelection && watchMapProv.route != null){
       return ListView.separated(
         shrinkWrap: true,
         physics: NeverScrollableScrollPhysics(),
-        itemCount: readMapProv.computedRoute!.options.length,
+        itemCount: readMapProv.route!.pathOptions.length,
         itemBuilder: (context, index){
           return pathOptionTile(
             optionIndex: index,
@@ -495,7 +547,8 @@ class _MapScreenState extends State<MapScreen> {
         },
       );
     }
-    else if (watchMapProv.mode == Modes.navigation && watchMapProv.computedRoute != null){
+    else if (watchMapProv.mode == Modes.navigation && watchMapProv.route != null){
+      log('${watchMapProv.route!.waypoints[0].address}');
       return Container(
         //color: MyColors.red,
         height: 700, // ReorderableListView needs to be inside a Height Container, otherwise it rashes the app
@@ -504,11 +557,11 @@ class _MapScreenState extends State<MapScreen> {
             log('$oldIndex, $newIndex');
           },
           children: List.generate(
-            watchMapProv.computedRoute!.waypoints.length,
+            watchMapProv.route!.waypoints.length,
             (index) => ListTile(
               key: Key(index.toString()),
               tileColor: MyColors.mainBlue,
-              title: Text('${watchMapProv.computedRoute!.waypoints[index].address}', style: MyTextStyles.h3,),
+              title: Text('${watchMapProv.route!.waypoints[index].address}', style: MyTextStyles.h3,),
               trailing: Icon(Icons.drag_handle_rounded),
             ),
           ),
@@ -535,7 +588,7 @@ class _MapScreenState extends State<MapScreen> {
     double totalEtaSeconds = 0;
     double totalDistanceMeters = 0;
     List<EdgeModel> totalEdges = [];
-    for (var subPath in readMapProv.computedRoute!.options[optionIndex]){
+    for (var subPath in readMapProv.route!.pathOptions[optionIndex]){
       totalEdges.addAll(subPath.edges);
       totalEtaSeconds += subPath.etaSeconds;
       totalDistanceMeters += subPath.distanceMeters;
@@ -617,10 +670,9 @@ class _MapScreenState extends State<MapScreen> {
                     child: Text('INICIAR RUTA', style: MyTextStyles.button2),
                     onPressed: (){
                       // Removing the rest of unselected routes, just to leave the selected one
-                      readMapProv.computedRoute!.options = [readMapProv.computedRoute!.options[optionIndex]];
+                      readMapProv.route!.pathOptions = [readMapProv.route!.pathOptions[optionIndex]];
                       // Since we only hace one path in paths, this will get that polyline
                       var p = getMapPolylines().toList();
-                      log(p.toString());
                       readNavigationProv.polylines = p;
 
                       readMapProv.mode = Modes.navigation;
@@ -714,21 +766,10 @@ class _MapScreenState extends State<MapScreen> {
       padding: EdgeInsets.only(left: 10, top: 10, right: 10),
       child: GestureDetector(
         onTap: () async {
-          dropMarker(location: place);
-          // FocusManager.instance.primaryFocus?.unfocus();//Closese the keyboard
-          // showLocationDialog(place);
-          
-          // readMapProv.waypoints.add(place);
-          // readMapProv.searchResults = [];
-          // await readMapProv.computeRoute();
-
-          // updateTextInputs();
-          // updateDraggableScrollableSheetSizes();
-          // draggableSheetController.animateTo(
-          //   dssMinChildSize,
-          //   duration: Duration(milliseconds : 100),
-          //   curve: Curves.linearToEaseOut,
-          // );
+          FocusManager.instance.primaryFocus?.unfocus();//Closese the keyboard
+          dropMarker(location: place);          
+          searchPlaceInputController.text = '';
+          updateTextInputs();
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -744,15 +785,17 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Future<void> showLocationDialog(LocationModel location) async {
-    List<Widget> actions = [
-      Container(
-        width: double.infinity,
-        child: ElevatedButton(
-          style: MyButtonStyles.primaryNoElevation,
-          child: Text('Buscar Rutas', style: MyTextStyles.button2,),
-          onPressed: () async {
-            if (readMapProv.origin != null && readMapProv.waypoints.isNotEmpty) {
+
+  Future<void> showMarkerDialog(LocationModel location, String markerId) async {
+    List<Widget> actions = [];
+    if (watchMapProv.mode == Modes.waypointsSelection && watchMapProv.waypoints.length == 1){
+      actions.add(
+        Container(
+          width: double.infinity,
+          child: ElevatedButton(
+            style: MyButtonStyles.primaryNoElevation,
+            child: Text('Buscar Rutas', style: MyTextStyles.button2,),
+            onPressed: () async {
               Navigator.pop(context);
               await readMapProv.computeRoute();
               updateTextInputs();
@@ -762,69 +805,65 @@ class _MapScreenState extends State<MapScreen> {
                 duration: Duration(milliseconds : 100),
                 curve: Curves.linearToEaseOut,
               );
+            },
+          ),
+        ),
+      );
+    }
+    if(watchMapProv.mode == Modes.routeSelection && markerId == 'temp'){
+      actions.add(
+        Container(
+          width: double.infinity,
+          child: OutlinedButton(
+            style: MyButtonStyles.outlined,
+            child: Text('Añadir destino', style: MyTextStyles.outlined,),
+            onPressed: () async {
+              Navigator.pop(context);
+              readMapProv.waypoints.add(location);
+              await readMapProv.computeRoute();
+
+              // updateTextInputs();
+              // updateDraggableScrollableSheetSizes();
+              // draggableSheetController.animateTo(
+              //   dssSnapSizes[0],
+              //   duration: Duration(milliseconds : 100),
+              //   curve: Curves.linearToEaseOut,
+              // );
+              
+              // Fluttertoast.showToast(
+              //   msg: "Ubicación agregada como nuevo destino",
+              //   toastLength: Toast.LENGTH_LONG
+              // );
+            },
+          ),
+        ),
+      );
+    }
+    actions.add(
+      Container(
+        width: double.infinity,
+        child: OutlinedButton(
+          style: MyButtonStyles.outlinedRed,
+          child: Text('Eliminar Marcador', style: MyTextStyles.outlinedRed,),
+          onPressed: () async {
+            Navigator.pop(context);
+            if(markerId == 'temp'){
+              tempMarker = null;
             }
             else {
-              Fluttertoast.showToast(
-                msg: "Defina al menos un punto de destino",
-                toastLength: Toast.LENGTH_LONG
-              );
+              readMapProv.waypoints.removeAt(int.parse(markerId));
+              if (readMapProv.waypoints.length != 0 && readMapProv.mode != Modes.waypointsSelection){
+                await readMapProv.computeRoute();
+              } else if (readMapProv.waypoints.length == 0){
+                readMapProv.route = null;
+                readMapProv.mode = Modes.waypointsSelection;
+              }
             }
+            setState(() {});
           },
         ),
       ),
-    ];
-    if(watchMapProv.waypoints.length > 1){
-      actions.addAll([
-        Container(
-          width: double.infinity,
-          child: OutlinedButton(
-            style: MyButtonStyles.outlined,
-            child: Text('Añadir como parada', style: MyTextStyles.outlined,),
-            onPressed: () {
-              Navigator.pop(context);
-              readMapProv.waypoints.insert(0, location);
-              // updateTextInputs();
-              // updateDraggableScrollableSheetSizes();
-              // draggableSheetController.animateTo(
-              //   dssSnapSizes[0],
-              //   duration: Duration(milliseconds : 100),
-              //   curve: Curves.linearToEaseOut,
-              // );
-              
-              Fluttertoast.showToast(
-                msg: "Ubicación agregada como parada",
-                toastLength: Toast.LENGTH_LONG
-              );
-            },
-          ),
-        ),
-        Container(
-          width: double.infinity,
-          child: OutlinedButton(
-            style: MyButtonStyles.outlined,
-            child: Text('Añadir como nuevo destino', style: MyTextStyles.outlined,),
-            onPressed: () {
-              Navigator.pop(context);
-              readMapProv.waypoints.add(location);
-              // updateTextInputs();
-              // updateDraggableScrollableSheetSizes();
-              // draggableSheetController.animateTo(
-              //   dssSnapSizes[0],
-              //   duration: Duration(milliseconds : 100),
-              //   curve: Curves.linearToEaseOut,
-              // );
-              
-              Fluttertoast.showToast(
-                msg: "Ubicación agregada como nuevo destino",
-                toastLength: Toast.LENGTH_LONG
-              );
-            },
-          ),
-        ),
-      ]);
-    }
-
-    
+    );
 
     showDialog(
       anchorPoint: Offset(double.maxFinite, 0),
@@ -853,7 +892,7 @@ class _MapScreenState extends State<MapScreen> {
                 borderRadius: BorderRadius.circular(15),
               ),
               elevation: 30,
-              insetPadding: EdgeInsets.only(top: 300), // NO TOCAR
+              insetPadding: EdgeInsets.only(top: 220), // NO TOCAR
               contentPadding: EdgeInsets.only(left: 20, top: 15, right: 20),
               actionsPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
               content: Wrap(

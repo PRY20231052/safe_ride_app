@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:safe_ride_app/models/location_model.dart';
-import 'package:safe_ride_app/models/route_model.dart';
 import 'package:safe_ride_app/providers/map_provider.dart';
 import '../services/safe_ride_api.dart';
 import '../utils.dart';
@@ -35,14 +34,15 @@ class NavigationProvider with ChangeNotifier{
   set polylines(List<Polyline> polylines){_polylines = polylines; notifyListeners();}
 
   bool _lockOnCurrentPosition = false;
-  bool get lockOnCurrentPosition => _lockOnCurrentPosition;
-  set lockOnCurrentPosition(bool lockOnCurrentPosition){_lockOnCurrentPosition = lockOnCurrentPosition; notifyListeners();}
+  bool get lockCameraOnCurrentPosition => _lockOnCurrentPosition;
+  set lockCameraOnCurrentPosition(bool lockOnCurrentPosition){_lockOnCurrentPosition = lockOnCurrentPosition; notifyListeners();}
   
   late StreamSubscription<Position> _positionStream;
   StreamSubscription<Position> get positionStream => _positionStream;
 
 
   Future<void> initialize() async {
+    
     _positionStream = Geolocator.getPositionStream(
       locationSettings: LocationSettings(
         accuracy: LocationAccuracy.best,

@@ -1,6 +1,7 @@
 // ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, avoid_init_to_null, sized_box_for_whitespace, avoid_unnecessary_containers, unnecessary_brace_in_string_interps, prefer_is_empty, use_build_context_synchronously
 
 import 'dart:async';
+import 'dart:ffi';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -34,7 +35,7 @@ class _MapScreenState extends State<MapScreen> {
   late GoogleMapController googleMapsController;
   TextEditingController originInputController = TextEditingController();
   TextEditingController searchPlaceInputController = TextEditingController();
-  DraggableScrollableController draggableSheetController = DraggableScrollableController();
+  
 
   Marker? tempMarker;
   Set<Marker> mapMarkers = {};
@@ -43,10 +44,7 @@ class _MapScreenState extends State<MapScreen> {
   List<BitmapDescriptor> markerIcons = [];
 
   // DraggableScrollableSheet parameters
-  int selectedRouteOptionIndex = 0;
-  double dssMinChildSize = 0.16;
-  double dssMainChildSize = 0.16;
-  List<double> dssSnapSizes = [0.16];
+  
 
   @override
   initState() {
@@ -74,43 +72,18 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
-  void updateDraggableScrollableSheetSizes(){
-    switch(watchMapProv.mode) {
-      case Modes.waypointsSelection:
-        if (watchMapProv.waypoints.length > 1){
-          dssMinChildSize = 0.24;
-          dssMainChildSize = 0.24;
-        }
-        else {
-          dssMinChildSize = 0.15;
-          dssMainChildSize = 0.15;
-        }
-        dssSnapSizes = [];
-        break; // The switch statement must be told to exit, or it will execute every case.
-      case Modes.routeSelection:
-        dssMinChildSize = 0.15;
-        dssMainChildSize = 0.43;
-        dssSnapSizes = [dssMainChildSize];
-        break;
-      case Modes.navigation:
-        dssMinChildSize = 0.13;
-        dssMainChildSize = dssMinChildSize;
-        dssSnapSizes = [];
-        break;
-    }
-  }
-
   void updateMapCameraPosition({LatLng? target}){
     // ??= means if target is null then assign...
-    target ??= watchMapProv.mode == Modes.navigation && watchNavigationProv.lockOnCurrentPosition ? 
+    target ??= watchMapProv.mode == Modes.navigation && watchNavigationProv.lockCameraOnCurrentPosition ? 
     LatLng(readMapProv.currentPosition.latitude, readMapProv.currentPosition.longitude) : readMapProv.origin!.coordinates;
+    log('BEARING: ${readMapProv.currentPosition.heading}');
     googleMapsController.animateCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(
           target: target,
           zoom: readMapProv.mode == Modes.navigation ? 18 : 15,
           tilt: readMapProv.mode == Modes.navigation ? 50 : 0.0,
-          bearing: 180,
+          bearing: watchNavigationProv.lockCameraOnCurrentPosition ? readMapProv.currentPosition.heading : 0,
         ),
       ),
     );
@@ -133,7 +106,7 @@ class _MapScreenState extends State<MapScreen> {
     // or provide the location with full details for faster response
 
     readMapProv.searchResults = [];
-    if (watchMapProv.waypoints.length >= 9){
+    if (watchMapProv.waypoints.length >= 3){
       Fluttertoast.showToast(
         msg: "Máximo número de destinos alcanzados",
         toastLength: Toast.LENGTH_LONG
@@ -142,7 +115,6 @@ class _MapScreenState extends State<MapScreen> {
     }
     // readMapProv.mode = Modes.waypointsSelection;
     // readMapProv.computedRoute = null;
-    // updateDraggableScrollableSheetSizes();
 
     location ??= await readMapProv.fetchLocationByLatLng(latLngPoint!);
     String? markerId;
@@ -162,8 +134,10 @@ class _MapScreenState extends State<MapScreen> {
       markerId = '${readMapProv.waypoints.length - 1}';
       log('location added to waypoints');
     }
+    readMapProv.updateDraggableScrollableSheetSizes();
     updateMapCameraPosition(target: location!.coordinates);
     updateTextInputs();
+
     showMarkerDialog(location, markerId!);
     setState(() {});
   }
@@ -198,10 +172,10 @@ class _MapScreenState extends State<MapScreen> {
         polylines.add(
           Polyline(
             polylineId: PolylineId(polyId.toString()),
-            color: i == selectedRouteOptionIndex ? MyColors.coldBlue : MyColors.paleBlue,
+            color: i == watchMapProv.selectedRouteOptionIndex ? MyColors.coldBlue : MyColors.paleBlue,
             jointType: JointType.round,
             endCap: Cap.roundCap,
-            width: watchMapProv.mode == Modes.navigation ? 15 : i == selectedRouteOptionIndex ? 7:5,
+            width: watchMapProv.mode == Modes.navigation ? 15 : i == watchMapProv.selectedRouteOptionIndex ? 7 : 5,
             points: subPath.polylinePoints,
           ),
         );
@@ -221,9 +195,8 @@ class _MapScreenState extends State<MapScreen> {
     watchNavigationProv = context.watch<NavigationProvider>();
 
     updateMapMarkers();
-    updateDraggableScrollableSheetSizes();
 
-    if (watchNavigationProv.lockOnCurrentPosition){
+    if (watchNavigationProv.lockCameraOnCurrentPosition){
       log('Following current position');
       updateMapCameraPosition(
         target: LatLng(
@@ -240,7 +213,8 @@ class _MapScreenState extends State<MapScreen> {
           alignment: AlignmentDirectional.topCenter,
           children: [
             GoogleMap(
-              myLocationButtonEnabled: true,
+              // padding: EdgeInsets.all(200),
+              myLocationButtonEnabled: false,
               myLocationEnabled: true,
               zoomControlsEnabled: true,
               zoomGesturesEnabled: true,
@@ -252,6 +226,13 @@ class _MapScreenState extends State<MapScreen> {
               onMapCreated: (controller) {
                 googleMapsController = controller;
               },
+              cameraTargetBounds: CameraTargetBounds(
+                // Limiting to only be able to navigate in these boundaries
+                LatLngBounds(
+                  northeast: LatLng(-12.08013, -76.98038),
+                  southwest: LatLng(-12.11198, -77.06152),
+                ),
+              ),
               markers: mapMarkers,
               polylines: getMapPolylines(),
               onTap: (position) {
@@ -263,27 +244,30 @@ class _MapScreenState extends State<MapScreen> {
                 dropMarker(latLngPoint: LatLng(position.latitude, position.longitude),);
                 updateMapMarkers();
               },
-              onCameraMove: (position) {
-                draggableSheetController.animateTo(
-                  dssMinChildSize,
-                  duration: Duration(milliseconds : 100),
-                  curve: Curves.linearToEaseOut,
-                );
-                //log(position.toString());
+              onCameraMoveStarted: () {
+                readNavigationProv.lockCameraOnCurrentPosition = false;
+                if(readMapProv.mode != Modes.navigation) {
+                  readMapProv.draggableSheetController.animateTo(
+                    readMapProv.dssMinChildSize,
+                    duration: Duration(milliseconds : 100),
+                    curve: Curves.linearToEaseOut,
+                  );
+                }
               },
             ),
             watchMapProv.mode != Modes.navigation ? Container() : NavigationOverlay(
               showFollowUpInstruction: false,
             ),
+            mapOverlay(),
             DraggableScrollableSheet(
-              controller: draggableSheetController,
-              initialChildSize: dssMainChildSize,
-              minChildSize: dssMinChildSize,
+              controller: watchMapProv.draggableSheetController,
+              initialChildSize: watchMapProv.dssMainChildSize,
+              minChildSize: watchMapProv.dssMinChildSize,
+              snapSizes: watchMapProv.dssSnapSizes,
               snap: true,
-              snapSizes: dssSnapSizes,
               builder: (context, scrollController) {
                 return Container(
-                  padding: EdgeInsets.symmetric(horizontal: 17.0),
+                  padding: EdgeInsets.symmetric(horizontal: 15.0),
                   decoration: BoxDecoration(
                     color: MyColors.white,
                     borderRadius: BorderRadius.only(
@@ -322,6 +306,32 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Widget mapOverlay(){
+    return Container(
+      margin: EdgeInsets.only(bottom: 145, left: 15, right: 15),
+      width: double.infinity,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            backgroundColor: MyColors.grey,
+            onPressed: (){
+              readNavigationProv.lockCameraOnCurrentPosition = true;
+            },
+            child: Container(
+              padding: EdgeInsets.all(10),
+              child: Image.asset(
+                'assets/thin-target.png',
+                color: MyColors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget draggableScrollableSheetContent(){
     if (watchMapProv.mode != Modes.navigation){
       return waypointsRouteSelectionContent();
@@ -333,19 +343,13 @@ class _MapScreenState extends State<MapScreen> {
 
   void exitNavigation(){
     readNavigationProv.cancelNavigation();
-    updateDraggableScrollableSheetSizes();
-    draggableSheetController.animateTo(
-      dssMinChildSize,
-      duration: Duration(milliseconds : 100),
-      curve: Curves.linearToEaseOut,
-    );
+    readMapProv.updateDraggableScrollableSheetSizes();
     updateMapCameraPosition();
   }
 
   Widget navigationContent(){
     List<PathModel> currentRoute = watchMapProv.route!.pathOptions[0];
     return Column(
-      mainAxisAlignment: MainAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -370,7 +374,6 @@ class _MapScreenState extends State<MapScreen> {
                 log('Alternative Routes not implemented :()');
                 // await readNavigationProv.computeAlternativeRouteFromCurrentPosition();
                 // await readMapProv.computeRoute();
-                // updateDraggableScrollableSheetSizes();
                 // draggableSheetController.animateTo(
                 //   dssSnapSizes[0],
                 //   duration: Duration(milliseconds : 100),
@@ -385,6 +388,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ],
         ),
+        SizedBox(height: 10,),
         Divider(thickness: 2, height: 20,),
         dssComplementaryBottomContent(),          
       ],
@@ -445,7 +449,7 @@ class _MapScreenState extends State<MapScreen> {
                         ),
                       ),
                       onTap: (){
-                        draggableSheetController.animateTo(
+                        readMapProv.draggableSheetController.animateTo(
                           1,
                           duration: Duration(milliseconds : 300),
                           curve: Curves.linearToEaseOut,
@@ -496,13 +500,9 @@ class _MapScreenState extends State<MapScreen> {
             onPressed: () async {
               if(readMapProv.waypoints.length > 0){
                 await readMapProv.computeRoute();
+                readMapProv.mode = Modes.routeSelection;
+                readMapProv.updateDraggableScrollableSheetSizes();
                 updateTextInputs();
-                updateDraggableScrollableSheetSizes();
-                draggableSheetController.animateTo(
-                  dssSnapSizes[0],
-                  duration: Duration(milliseconds : 100),
-                  curve: Curves.linearToEaseOut,
-                );
               }
               else {
                 Fluttertoast.showToast(
@@ -553,17 +553,23 @@ class _MapScreenState extends State<MapScreen> {
         //color: MyColors.red,
         height: 700, // ReorderableListView needs to be inside a Height Container, otherwise it rashes the app
         child: ReorderableListView(
-          onReorder: (int oldIndex, int newIndex){
-            log('$oldIndex, $newIndex');
+          onReorder: (int oldIndex, int newIndex) async {
+            if(newIndex > oldIndex) newIndex--;
+            final waypoint = readMapProv.waypoints.removeAt(oldIndex);
+            readMapProv.waypoints.insert(newIndex, waypoint);
+            await readMapProv.computeRoute();
+            setState(() {});
           },
           children: List.generate(
-            watchMapProv.route!.waypoints.length,
-            (index) => ListTile(
-              key: Key(index.toString()),
-              tileColor: MyColors.mainBlue,
-              title: Text('${watchMapProv.route!.waypoints[index].address}', style: MyTextStyles.h3,),
-              trailing: Icon(Icons.drag_handle_rounded),
-            ),
+            watchMapProv.waypoints.length,
+            (index) {
+              return ListTile(
+                key: Key(index.toString()),
+                tileColor: MyColors.mainBlue,
+                title: Text('${watchMapProv.waypoints[index].name}', style: MyTextStyles.h3,),
+                trailing: Icon(Icons.drag_handle_rounded),
+              );
+            }
           ),
         ),
       );
@@ -669,22 +675,9 @@ class _MapScreenState extends State<MapScreen> {
                     style: MyButtonStyles.primary,
                     child: Text('INICIAR RUTA', style: MyTextStyles.button2),
                     onPressed: (){
-                      // Removing the rest of unselected routes, just to leave the selected one
-                      readMapProv.route!.pathOptions = [readMapProv.route!.pathOptions[optionIndex]];
-                      // Since we only hace one path in paths, this will get that polyline
-                      var p = getMapPolylines().toList();
-                      readNavigationProv.polylines = p;
-
+                      startRoute(optionIndex);
                       readMapProv.mode = Modes.navigation;
-                      // updateMapCameraPosition(
-                      //   target: readMapProv.computedRoute!.origin.coordinates,
-                      // );
-                      updateDraggableScrollableSheetSizes();
-                      draggableSheetController.animateTo(
-                        dssMinChildSize,
-                        duration: Duration(milliseconds : 100),
-                        curve: Curves.linearToEaseOut,
-                      );
+                      readMapProv.updateDraggableScrollableSheetSizes();
                       readNavigationProv.startNavigation();
                     },
                   ),
@@ -695,6 +688,13 @@ class _MapScreenState extends State<MapScreen> {
         ],
       ),
     );
+  }
+
+  void startRoute(int optionIndex){
+    // Removing the rest of unselected routes, just to leave the selected one
+    readMapProv.route!.pathOptions = [readMapProv.route!.pathOptions[optionIndex]];
+    // Since we only hace one path in paths, this will get that polyline
+    readNavigationProv.polylines = getMapPolylines().toList();
   }
 
   Widget pathInfoGraphBar({
@@ -767,9 +767,12 @@ class _MapScreenState extends State<MapScreen> {
       child: GestureDetector(
         onTap: () async {
           FocusManager.instance.primaryFocus?.unfocus();//Closese the keyboard
-          dropMarker(location: place);          
+          
+          setState(() {});   
+          dropMarker(location: place);
           searchPlaceInputController.text = '';
           updateTextInputs();
+          readMapProv.updateDraggableScrollableSheetSizes();
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -798,19 +801,15 @@ class _MapScreenState extends State<MapScreen> {
             onPressed: () async {
               Navigator.pop(context);
               await readMapProv.computeRoute();
+              readMapProv.mode = Modes.routeSelection;
+              readMapProv.updateDraggableScrollableSheetSizes();
               updateTextInputs();
-              updateDraggableScrollableSheetSizes();
-              draggableSheetController.animateTo(
-                dssSnapSizes[0],
-                duration: Duration(milliseconds : 100),
-                curve: Curves.linearToEaseOut,
-              );
             },
           ),
         ),
       );
     }
-    if(watchMapProv.mode == Modes.routeSelection && markerId == 'temp'){
+    if(watchMapProv.mode != Modes.waypointsSelection && markerId == 'temp'){
       actions.add(
         Container(
           width: double.infinity,
@@ -821,19 +820,8 @@ class _MapScreenState extends State<MapScreen> {
               Navigator.pop(context);
               readMapProv.waypoints.add(location);
               await readMapProv.computeRoute();
-
-              // updateTextInputs();
-              // updateDraggableScrollableSheetSizes();
-              // draggableSheetController.animateTo(
-              //   dssSnapSizes[0],
-              //   duration: Duration(milliseconds : 100),
-              //   curve: Curves.linearToEaseOut,
-              // );
-              
-              // Fluttertoast.showToast(
-              //   msg: "Ubicación agregada como nuevo destino",
-              //   toastLength: Toast.LENGTH_LONG
-              // );
+              startRoute(0); // always start on the first one
+              readMapProv.updateDraggableScrollableSheetSizes(forceAnimationToMainSize: true);
             },
           ),
         ),
@@ -851,13 +839,25 @@ class _MapScreenState extends State<MapScreen> {
               tempMarker = null;
             }
             else {
-              readMapProv.waypoints.removeAt(int.parse(markerId));
-              if (readMapProv.waypoints.length != 0 && readMapProv.mode != Modes.waypointsSelection){
-                await readMapProv.computeRoute();
-              } else if (readMapProv.waypoints.length == 0){
+              // If we are removing the last waypoint we can safely just took out the last subpath
+              if (int.parse(markerId) == readMapProv.waypoints.length - 1){
+                for(var pathOpt in readMapProv.route!.pathOptions){
+                  pathOpt.removeLast();
+                }
+                readMapProv.waypoints.removeAt(int.parse(markerId));
+                readMapProv.route!.waypoints.removeAt(int.parse(markerId));
+              }
+              else {
+                readMapProv.waypoints.removeAt(int.parse(markerId));
+                if (readMapProv.waypoints.length != 0 && readMapProv.mode != Modes.waypointsSelection){
+                  await readMapProv.computeRoute();
+                }
+              }
+              if (readMapProv.waypoints.length == 0){
                 readMapProv.route = null;
                 readMapProv.mode = Modes.waypointsSelection;
               }
+              readMapProv.updateDraggableScrollableSheetSizes(forceAnimationToMainSize: true);
             }
             setState(() {});
           },

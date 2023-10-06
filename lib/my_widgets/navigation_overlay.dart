@@ -36,39 +36,45 @@ class NavigationOverlay extends StatelessWidget {
     watchMapProv = context.watch<MapProvider>();
 
     return Container(
-      padding: EdgeInsets.all(15),
+      margin: EdgeInsets.only(top: 15, bottom: 145, left: 15, right: 15),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           directionsSignWidget(),
-
-          SizedBox(height: MediaQuery.of(context).size.height - 310,),
-          IntrinsicWidth(
-            child: Material(
-              elevation: 3.5,
-              borderRadius: BorderRadius.circular(15),
-              child: Container(
-                padding: EdgeInsets.symmetric(vertical: 8, horizontal: 13),
-                decoration: BoxDecoration(
-                  color: MyColors.white,
+          // SizedBox(height: MediaQuery.of(context).size.height - 335,),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              IntrinsicWidth(
+                child: Material(
+                  elevation: 3.5,
                   borderRadius: BorderRadius.circular(15),
-                  border: Border.all(
-                    width: 2,
-                    color: MyColors.lightGrey,
-                  ),
-                ),
-                child: Center(
-                  child: Text(
-                    watchMapProv.computedRoute!.paths[0].directions[watchNavigationProv.directionIndex!].streetName,
-                    style: TextStyle(
-                      fontFamily: MyTextStyles.fontName,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 20,
-                      color: MyColors.black,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(vertical: 8, horizontal: 13),
+                    decoration: BoxDecoration(
+                      color: MyColors.white,
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(
+                        width: 2,
+                        color: MyColors.lightGrey,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        watchMapProv.route!.pathOptions[0][watchNavigationProv.currentSubPathIndex!].directions[watchNavigationProv.directionIndex!].streetName,
+                        style: TextStyle(
+                          fontFamily: MyTextStyles.fontName,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 20,
+                          color: MyColors.black,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
         ],
       ),
@@ -76,7 +82,7 @@ class NavigationOverlay extends StatelessWidget {
   }
 
   Widget getDirectionImg(){
-    switch(watchMapProv.computedRoute!.paths[0].directions[watchNavigationProv.directionIndex!].endingAction){
+    switch(watchMapProv.route!.pathOptions[0][watchNavigationProv.currentSubPathIndex!].directions[watchNavigationProv.directionIndex!].endingAction){
       case 'turn_left':
         return Image.asset('assets/turn_left.png', color: MyColors.white,);
       
@@ -91,10 +97,10 @@ class NavigationOverlay extends StatelessWidget {
 
   Widget directionsSignWidget(){
     String nextStreetName = "";
-    if (watchNavigationProv.directionIndex! >= watchMapProv.computedRoute!.paths[0].directions.length - 1){
+    if (watchNavigationProv.directionIndex! >= watchMapProv.route!.pathOptions[0][watchNavigationProv.currentSubPathIndex!].directions.length - 1){
       nextStreetName = 'Llegando a tu destino';
     } else {
-      nextStreetName = watchMapProv.computedRoute!.paths[0].directions[watchNavigationProv.directionIndex! + 1].streetName;
+      nextStreetName = watchMapProv.route!.pathOptions[0][watchNavigationProv.currentSubPathIndex!].directions[watchNavigationProv.directionIndex! + 1].streetName;
     }
     return Material(
       elevation: 5,

@@ -27,43 +27,61 @@ class MapProvider with ChangeNotifier {
   late GoogleMapsGeocoding _geocodingApi;
 
   Modes _mode = Modes.waypointsSelection;
+  Modes get mode => _mode;
+  set mode(Modes mode){_mode = mode; notifyListeners();}
 
   LocationModel? _origin;
-  List<LocationModel>? _waypoints;
-  LocationModel? _destination;
-  List<LocationModel> _searchResults = [];
-  RouteModel? _computedRoute;
-  bool _currentPositionAsOrigin = true;
-  bool _isComputingRoute = false;
-  bool _isLoading = true;
-  // READ ONLY ATTRIBUTES
-  late Position _currentPosition;
-
-
-  /////////////////////GETTERS////////////////////////////////////
-  Modes get mode => _mode;
   LocationModel? get origin => _origin;
-  List<LocationModel>? get waypoints => _waypoints;
-  LocationModel? get destination => _destination;
-  List<LocationModel> get searchResults => _searchResults;
-  RouteModel? get computedRoute => _computedRoute;
-  bool get currentPositionAsOrigin => _currentPositionAsOrigin;
-  bool get isComputingRoute => _isComputingRoute;
-  bool get isLoading => _isLoading;
-  Position get currentPosition => _currentPosition;
-
-  
-  set mode(Modes mode){_mode = mode; notifyListeners();}
   set origin(LocationModel? origin){_origin = origin; notifyListeners(); }
-  set waypoints(List<LocationModel>? waypoints) {_waypoints = waypoints; notifyListeners();}
-  set destination(LocationModel? destination){_destination = destination; notifyListeners(); }
+
+  List<LocationModel> _waypoints = [];
+  List<LocationModel> get waypoints => _waypoints;
+  set waypoints(List<LocationModel> waypoints) {_waypoints = waypoints; notifyListeners();}
+
+  List<LocationModel> _searchResults = [];
+  List<LocationModel> get searchResults => _searchResults;
   set searchResults(List<LocationModel> searchResults){_searchResults = searchResults; notifyListeners(); }
-  set computedRoute(RouteModel? computedRoute){_computedRoute = computedRoute; notifyListeners(); }
+
+  RouteModel? _route;
+  RouteModel? get route => _route;
+  set route(RouteModel? route){_route = route; notifyListeners(); }
+
+  int _selectedRouteOptionIndex = 0;
+  int get selectedRouteOptionIndex => _selectedRouteOptionIndex;
+  set selectedRouteOptionIndex(int selectedRouteOptionIndex){_selectedRouteOptionIndex = selectedRouteOptionIndex; notifyListeners();}
+
+  bool _currentPositionAsOrigin = true;
+  bool get currentPositionAsOrigin => _currentPositionAsOrigin;
   set currentPositionAsOrigin(bool currentPositionAsOrigin){_currentPositionAsOrigin = currentPositionAsOrigin; notifyListeners(); }
+
+  bool _isComputingRoute = false;
+  bool get isComputingRoute => _isComputingRoute;
   set isComputingRoute(bool isComputingRoute){_isComputingRoute = isComputingRoute; notifyListeners(); }
+
+  bool _isLoading = true;
+  bool get isLoading => _isLoading;
   set isLoading(bool isLoading){_isLoading = isLoading; notifyListeners();}
+
+  late Position _currentPosition;
+  Position get currentPosition => _currentPosition;
   set currentPosition(Position currentPosition){_currentPosition = currentPosition; notifyListeners();}
   
+  // LAYOUT AND DESIGN RELATED VARIABLES
+  double _dssMinChildSize = 0.16;
+  double get dssMinChildSize => _dssMinChildSize;
+  set dssMinChildSize(double dssMinChildSize){_dssMinChildSize = dssMinChildSize; notifyListeners();}
+
+  double _dssMainChildSize = 0.16;
+  double get dssMainChildSize => _dssMainChildSize;
+  set dssMainChildSize(double dssMainChildSize){_dssMainChildSize = dssMainChildSize; notifyListeners();}
+
+  List<double> _dssSnapSizes = [0.16];
+  List<double> get dssSnapSizes => _dssSnapSizes;
+  set dssSnapSizes(List<double> dssSnapSizes){_dssSnapSizes = dssSnapSizes; notifyListeners();}
+
+  DraggableScrollableController _draggableSheetController = DraggableScrollableController();
+  DraggableScrollableController get draggableSheetController => _draggableSheetController;
+  set draggableSheetController(DraggableScrollableController draggableSheetController){_draggableSheetController = draggableSheetController; notifyListeners();}
 
   Future<void> initialize() async {
     await verifyLocationPermissions();
@@ -78,16 +96,20 @@ class MapProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<LocationModel?> fetchLocationByLatLng(double latitude, double longitude) async {
+  Future<LocationModel?> fetchLocationByLatLng(LatLng latLng) async {
     var response = await _geocodingApi.searchByLocation(
-      Location(lat: latitude, lng: longitude)
+      Location(lat: latLng.latitude, lng: latLng.longitude)
     );
     if (response.isOkay){
-      // log(response.results.first.placeId);
-      return LocationModel(
-        coordinates: LatLng(latitude, longitude),
-        address: response.results.first.formattedAddress,
-      );
+      var detailsResponse = await _placesApi.getDetailsByPlaceId(response.results.first.placeId);
+      if (detailsResponse.isOkay){
+        log('DETAILS for first: ${detailsResponse.result.name}');
+        return LocationModel(
+          coordinates: latLng,
+          name: detailsResponse.result.name,
+          address: response.results.first.formattedAddress,
+        );
+      }
     }
     return null;
   }
@@ -153,11 +175,10 @@ class MapProvider with ChangeNotifier {
   Future<void> computeRoute() async {
     _isComputingRoute = true;
     notifyListeners();
-    _computedRoute = await _safeRideApi.requestRoute(
+    _route = await _safeRideApi.requestRoute(
       _origin!.coordinates,
-      _destination!.coordinates,
+      [for(var waypoint in _waypoints) waypoint.coordinates],
     );
-    _mode = Modes.routeSelection;
     _isComputingRoute = false;
     notifyListeners();
   }
@@ -165,9 +186,9 @@ class MapProvider with ChangeNotifier {
   Future<void> computeAlternativeRouteFromCurrentPosition() async {
     _isComputingRoute = true;
     notifyListeners();
-    _computedRoute = await _safeRideApi.requestRoute(
+    _route = await _safeRideApi.requestRoute(
       LatLng(_currentPosition.latitude, _currentPosition.longitude),
-      _destination!.coordinates,
+      [for(var waypoint in _waypoints) waypoint.coordinates],
     );
     _isComputingRoute = false;
     // _mode = Modes.routeSelection;
@@ -176,10 +197,39 @@ class MapProvider with ChangeNotifier {
   }
 
   clearDestination(){
-    _computedRoute = null;
-    _destination = null;
+    _route = null;
     _waypoints = [];
     _searchResults = [];
     notifyListeners();
+  }
+
+  void updateDraggableScrollableSheetSizes({bool forceAnimationToMainSize = false}){
+    // var oldMin = _dssMinChildSize;
+    var oldMain = _dssMainChildSize;
+    switch(_mode) {
+      case Modes.waypointsSelection:      // Size to incldue the Compute Routes button
+        _dssMinChildSize = _waypoints.length > 1 ? 0.24 : 0.15; 
+        _dssMainChildSize = _dssMinChildSize;
+        _dssSnapSizes = [];
+        break; // The switch statement must be told to exit, or it will execute every case.
+      case Modes.routeSelection:
+        _dssMinChildSize = 0.15;
+        _dssMainChildSize = 0.43;
+        _dssSnapSizes = [_dssMainChildSize];
+        break;
+      case Modes.navigation:
+        _dssMinChildSize = 0.15;
+        _dssMainChildSize = _dssMinChildSize;
+        _dssSnapSizes = [];
+        break;
+    }
+    // MIGH CAUSE ISSUES
+    if (forceAnimationToMainSize || _draggableSheetController.isAttached && oldMain != _dssMainChildSize){
+      _draggableSheetController.animateTo(
+        _dssMainChildSize,
+        duration: Duration(milliseconds : 100),
+        curve: Curves.linearToEaseOut,
+      );
+    }
   }
 }

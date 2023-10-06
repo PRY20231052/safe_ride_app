@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:safe_ride_app/models/location_model.dart';
-import 'package:safe_ride_app/models/route_model.dart';
 import 'package:safe_ride_app/providers/map_provider.dart';
 import '../services/safe_ride_api.dart';
 import '../utils.dart';
@@ -19,33 +18,31 @@ class NavigationProvider with ChangeNotifier{
   NavigationProvider({
     this.mapProvider,
   });
-  
-  int? _pathCurrentIndex;
-  int? get pathCurrentIndex => _pathCurrentIndex;
-  set pathCurrentIndex(int? pathCurrentIndex){_pathCurrentIndex = pathCurrentIndex; notifyListeners();}
+
+  int? _currentSubPathIndex; // in a route with multiple waypoints, a sub path is the path in between waypoints
+  int? get currentSubPathIndex => _currentSubPathIndex;
+  set currentSubPathIndex(int? currentSubPathIndex){_currentSubPathIndex = currentSubPathIndex; notifyListeners();}
+
 
   int? _directionIndex;
   int? get directionIndex => _directionIndex;
   set directionIndex(int? directionIndex){_directionIndex = directionIndex; notifyListeners();}
 
 
-  bool _isInsideNodeRadius = false;
-  bool get isInsideNodeRadius => _isInsideNodeRadius;
-  set isInsideNodeRadius(bool isInsideNodeRadius){_isInsideNodeRadius = isInsideNodeRadius; notifyListeners();}
-  
-  Polyline? _polyline;
-  Polyline? get polyline => _polyline;
-  set polyline(Polyline? polyline){_polyline = polyline; notifyListeners();}
+  List<Polyline> _polylines = []; // composition of the whole route
+  List<Polyline> get polylines => _polylines;
+  set polylines(List<Polyline> polylines){_polylines = polylines; notifyListeners();}
 
   bool _lockOnCurrentPosition = false;
-  bool get lockOnCurrentPosition => _lockOnCurrentPosition;
-  set lockOnCurrentPosition(bool lockOnCurrentPosition){_lockOnCurrentPosition = lockOnCurrentPosition; notifyListeners();}
+  bool get lockCameraOnCurrentPosition => _lockOnCurrentPosition;
+  set lockCameraOnCurrentPosition(bool lockOnCurrentPosition){_lockOnCurrentPosition = lockOnCurrentPosition; notifyListeners();}
   
   late StreamSubscription<Position> _positionStream;
   StreamSubscription<Position> get positionStream => _positionStream;
 
 
   Future<void> initialize() async {
+    
     _positionStream = Geolocator.getPositionStream(
       locationSettings: LocationSettings(
         accuracy: LocationAccuracy.best,
@@ -72,8 +69,8 @@ class NavigationProvider with ChangeNotifier{
 
   void startNavigation() {
     // we require that paths only have one element, the selected one.
-    if (mapProvider!.computedRoute != null && mapProvider!.computedRoute!.paths.length == 1){
-      _pathCurrentIndex = 0;
+    if (mapProvider!.route != null && mapProvider!.route!.pathOptions.length == 1){
+      _currentSubPathIndex = 0;
       _directionIndex = 0;
       _lockOnCurrentPosition = true;
       log('STARTING NAVIGATION');
@@ -81,40 +78,58 @@ class NavigationProvider with ChangeNotifier{
   }
 
   void handleNavigationProgress(){
-    int polylineIndex = getPolylineIndexByLatLng(
-      _polyline!,
+    log('currentSubPathIndex ${_currentSubPathIndex}/${_polylines.length - 1}');
+
+    Polyline currentPolyline = _polylines[_currentSubPathIndex!];
+    int polylinePointIndex = getPolylineIndexByLatLng(
+      currentPolyline,
       LatLng(
         mapProvider!.currentPosition.latitude,
         mapProvider!.currentPosition.longitude
       ),
     );
-    log('polyline index ${polylineIndex}/${_polyline!.points.length - 1}');
+    log('polyline point index ${polylinePointIndex}/${currentPolyline.points.length - 1}');
 
-    for (final (i, direction) in mapProvider!.computedRoute!.paths[0].directions.indexed){
-      if(direction.coveredPolylinePointsIndexes.contains(polylineIndex)){
-        directionIndex = i;
+    for (final (i, direction) in mapProvider!.route!.pathOptions[0][_currentSubPathIndex!].directions.indexed){
+      if(direction.coveredPolylinePointsIndexes.contains(polylinePointIndex)){
+        _directionIndex = i;
       }
     }
-    log('direction index $directionIndex/${mapProvider!.computedRoute!.paths[0].directions.length - 1}');
+    log('direction index $_directionIndex/${mapProvider!.route!.pathOptions[0][_currentSubPathIndex!].directions.length - 1}');
 
 
-    if(polylineIndex != -1){
-      // log('CURRENT INDEX: $_pathCurrentIndex/${mapProvider!.computedRoute!.paths[0].nodes.length}');
-      for (var i = _pathCurrentIndex! + 1; i < mapProvider!.computedRoute!.paths[0].nodes.length; i++){
-        double distance = computeDistanceBetweenPoints(
-          LatLng(mapProvider!.currentPosition.latitude, mapProvider!.currentPosition.longitude),
-          LatLng(mapProvider!.computedRoute!.paths[0].nodes[i].latitude, mapProvider!.computedRoute!.paths[0].nodes[i].longitude)
-        );
-      }
-    } else {
+    if(polylinePointIndex == -1){
       log('Deviated from path!');
+    
+    // If we have reached the end of the current sub Path
+    } else if (polylinePointIndex >= currentPolyline.points.length - 2){
+      if (_currentSubPathIndex! >= _polylines.length - 1){
+        // no more polylines to travel
+        cancelNavigation();
+      } else {
+        // finished subPath, go to next sub path
+        _currentSubPathIndex = _currentSubPathIndex! + 1;
+        _directionIndex = 0;
+      }
+    } else{
       // Re-compute a new route from current position to the rest of waypoints
+      // log('CURRENT INDEX: $_pathCurrentIndex/${mapProvider!.computedRoute!.paths[0].nodes.length}');
+      // double distance = computeDistanceBetweenPoints(
+      //   LatLng(
+      //     mapProvider!.currentPosition.latitude,
+      //     mapProvider!.currentPosition.longitude,
+      //   ),
+      //   LatLng(
+      //     mapProvider!.computedRoute!.options[0][_currentSubPathIndex!].nodes[i].latitude,
+      //     mapProvider!.computedRoute!.options[0][_currentSubPathIndex!].nodes[i].longitude,
+      //   ),
+      // );
     }
   }
   
   void cancelNavigation() {
     mapProvider!.mode = Modes.waypointsSelection;
-    mapProvider!.computedRoute = null;
+    mapProvider!.route = null;
     _lockOnCurrentPosition = false;
     mapProvider!.clearDestination();
     notifyListeners();
@@ -129,7 +144,7 @@ class NavigationProvider with ChangeNotifier{
     // mapProvider!.origin = ori;
     // mapProvider!.destination = des;
     log('computing');
-    var a = await mapProvider!.computeRoute();
+    await mapProvider!.computeRoute();
     log('done computing');
     // notifyListeners();
   }

@@ -5,14 +5,14 @@ class RouteModel {
   LocationModel origin;
   List<LocationModel> waypoints;
   DateTime departureTime;
-  List<PathModel> paths;
+  List<List<PathModel>> pathOptions;
   Map<String, dynamic> pathsGeojson;
 
   RouteModel({
     required this.origin,
     required this.waypoints,
     required this.departureTime,
-    required this.paths,
+    required this.pathOptions,
     required this.pathsGeojson,
   });
 
@@ -24,9 +24,11 @@ class RouteModel {
         .map((waypointJson) => LocationModel.fromJson(waypointJson))
         .toList(),
       departureTime: DateTime.parse(json['departure_time']),
-      paths: (json['paths'] as List)
-        .map((pathJson) => PathModel.fromJson(pathJson))
-        .toList(),
+      pathOptions: [
+        // So far, the backend only returns a maximum of 3 options, the third one being always empty
+        (json['option1'] as List).map((pathJson) => PathModel.fromJson(pathJson)).toList(),
+        (json['option2'] as List).map((pathJson) => PathModel.fromJson(pathJson)).toList(),
+      ],
       pathsGeojson: json['path_geojson'] ?? {},
     );
   }
@@ -37,7 +39,10 @@ class RouteModel {
       'origin': origin.toJson(),
       'waypoints': waypoints.map((waypoint) => waypoint.toJson()).toList(),
       'departure_time': "",
-      'paths': paths.map((path) => path.toJson()).toList(),
+      'path_options': [
+        for (var pathOpt in pathOptions)
+          pathOpt.map((path) => path.toJson()).toList()
+      ],
       'path_geojson': pathsGeojson,
     };
   }

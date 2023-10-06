@@ -11,7 +11,7 @@ class SafeRideApi {
   final String baseURL = "http://10.0.2.2:8000/api";
   // final String baseURL = 'https://aldair98.pythonanywhere.com/api';
 
-  Future<RouteModel?> requestRoute(LatLng origin, LatLng destination) async {
+  Future<RouteModel?> requestRoute(LatLng origin, List<LatLng> waypoints) async {
     try {
       var response = await http.post(
       Uri.parse('${baseURL}/routes/'),
@@ -27,16 +27,17 @@ class SafeRideApi {
             }
           },
           "waypoints": [
-            {
-              "coordinates": {
-                "latitude": destination.latitude,
-                "longitude": destination.longitude
+            for (var waypoint in waypoints)
+              {
+                "coordinates": {
+                  "latitude": waypoint.latitude,
+                  "longitude": waypoint.longitude
+                }
               }
-            }
           ]
         })
       );
-      log(response.body);
+      // log(response.body);
       if (response.statusCode == 201) {
         RouteModel? route = RouteModel.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
         return route;

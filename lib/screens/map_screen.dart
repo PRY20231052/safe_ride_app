@@ -1,16 +1,19 @@
 // ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, avoid_init_to_null, sized_box_for_whitespace, avoid_unnecessary_containers, unnecessary_brace_in_string_interps, prefer_is_empty, use_build_context_synchronously
 
 import 'dart:async';
+import 'dart:ffi';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:safe_ride_app/utils/asset_to_bytes.dart';
 import 'package:safe_ride_app/models/location_model.dart';
 import 'package:safe_ride_app/models/path_model.dart';
 import 'package:safe_ride_app/my_widgets/my_loading_screen.dart';
 import 'package:safe_ride_app/my_widgets/navigation_overlay.dart';
 import 'package:safe_ride_app/providers/map_provider.dart';
 import 'package:safe_ride_app/providers/navigation_provider.dart';
+import '../models/edge_model.dart';
 import '../styles.dart';
 import 'dart:developer';
 import 'package:provider/provider.dart';
@@ -28,21 +31,20 @@ class _MapScreenState extends State<MapScreen> {
   late NavigationProvider watchNavigationProv;
   late NavigationProvider readNavigationProv;
 
-  // FLAGS
-  bool modifyOrigin = false;
-  bool modifyDestination = true;
-
   // CONTROLLERS
   late GoogleMapController googleMapsController;
   TextEditingController originInputController = TextEditingController();
-  TextEditingController destinationInputController = TextEditingController();
-  DraggableScrollableController draggableSheetController = DraggableScrollableController();
+  TextEditingController searchPlaceInputController = TextEditingController();
+  
+
+  Marker? tempMarker;
+  Set<Marker> mapMarkers = {};
+
+  // MARKERS
+  List<BitmapDescriptor> markerIcons = [];
 
   // DraggableScrollableSheet parameters
-  int highlightedPolylineIndex = 0;
-  double dssMinChildSize = 0.1;
-  double dssInitialChildSize = 0.30;
-  List<double> dssSnapSizes = [0.30];
+  
 
   @override
   initState() {
@@ -53,7 +55,12 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> asyncInit() async {
     log('Initializing...');
     await Provider.of<MapProvider>(context, listen: false).initialize();
-    await Provider.of<NavigationProvider>(context, listen: false).initialize();
+    await Provider.of<NavigationProvider>(context, listen: false).initialize(); 
+    markerIcons = [
+      for(var i=1; i < 10; i++)
+        BitmapDescriptor.fromBytes(await assetToBytes('assets/marker_red_$i.png', width: 85,))
+    ];
+    markerIcons.add(BitmapDescriptor.fromBytes(await assetToBytes('assets/marker_red.png', width: 85,)));
     updateTextInputs();
     log('Initialized!');
   }
@@ -65,36 +72,18 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
-  void updateDraggableScrollableSheetSizes(){
-    switch(watchMapProv.mode) {
-      case Modes.waypointsSelection:
-        dssMinChildSize = 0.1;
-        dssInitialChildSize = 0.29;
-        dssSnapSizes = [dssInitialChildSize];
-        break; // The switch statement must be told to exit, or it will execute every case.
-      case Modes.routeSelection:
-        dssMinChildSize = 0.1;
-        dssInitialChildSize = 0.55;
-        dssSnapSizes = [dssInitialChildSize];
-        break;
-      case Modes.navigation:
-        dssMinChildSize = 0.13;
-        dssInitialChildSize = dssMinChildSize;
-        dssSnapSizes = [];
-        break;
-    }
-  }
-
   void updateMapCameraPosition({LatLng? target}){
     // ??= means if target is null then assign...
-    target ??= watchMapProv.mode == Modes.navigation && watchNavigationProv.lockOnCurrentPosition ? 
+    target ??= watchMapProv.mode == Modes.navigation && watchNavigationProv.lockCameraOnCurrentPosition ? 
     LatLng(readMapProv.currentPosition.latitude, readMapProv.currentPosition.longitude) : readMapProv.origin!.coordinates;
+    log('BEARING: ${readMapProv.currentPosition.heading}');
     googleMapsController.animateCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(
           target: target,
           zoom: readMapProv.mode == Modes.navigation ? 18 : 15,
           tilt: readMapProv.mode == Modes.navigation ? 50 : 0.0,
+          bearing: watchNavigationProv.lockCameraOnCurrentPosition ? readMapProv.currentPosition.heading : 0,
         ),
       ),
     );
@@ -104,79 +93,96 @@ class _MapScreenState extends State<MapScreen> {
     LatLng currentLatLng = LatLng(readMapProv.currentPosition.latitude, readMapProv.currentPosition.longitude);
     originInputController.text = readMapProv.currentPositionAsOrigin ? "Mi ubicación actual" : readMapProv.origin?.address ??  "";
 
-    if (readMapProv.destination != null && readMapProv.destination!.coordinates == currentLatLng){
-      destinationInputController.text = "Mi ubicación actual";
-    }
-    else {
-      destinationInputController.text = readMapProv.destination?.address ??  "";
-    }
+    // if (readMapProv.waypoints.isNotEmpty && readMapProv.waypoints[-1].coordinates == currentLatLng){
+    //   destinationInputController.text = "Mi ubicación actual";
+    // }
+    // else if(readMapProv.waypoints.isNotEmpty) {
+    //   destinationInputController.text = readMapProv.waypoints[-1].address ??  "";
+    // }
   }
 
-  allowOriginSelection() {
-    modifyDestination = false;
-    modifyOrigin = true;
-  }
-  allowDestinationSelection() {
-    modifyDestination = true;
-    modifyOrigin = false;
-  }
+  Future<void> dropMarker({LatLng? latLngPoint, LocationModel? location}) async {
+    // You can either provide a latlng point and it will request the rest of the location details'
+    // or provide the location with full details for faster response
 
-  Future<void> dropMarker(position) async {
-
-    readMapProv.mode = Modes.waypointsSelection;
     readMapProv.searchResults = [];
-    readMapProv.computedRoute = null;
-    updateDraggableScrollableSheetSizes();
-
-    if (modifyOrigin) {
-      readMapProv.origin = LocationModel(
-        coordinates: LatLng(position.latitude, position.longitude),
+    if (watchMapProv.waypoints.length >= 3){
+      Fluttertoast.showToast(
+        msg: "Máximo número de destinos alcanzados",
+        toastLength: Toast.LENGTH_LONG
       );
-    } else if (modifyDestination) {
-      readMapProv.destination = await readMapProv.fetchLocationByLatLng(
-        position.latitude, position.longitude
-      );
-      readMapProv.waypoints = [readMapProv.destination!];
-    } else {
-      modifyDestination = false;
-      modifyOrigin = false;
+      return;
     }
-    updateMapCameraPosition(target: LatLng(position.latitude, position.longitude));
+    // readMapProv.mode = Modes.waypointsSelection;
+    // readMapProv.computedRoute = null;
+
+    location ??= await readMapProv.fetchLocationByLatLng(latLngPoint!);
+    String? markerId;
+    if(watchMapProv.mode == Modes.routeSelection || watchMapProv.mode == Modes.navigation){
+      markerId = 'temp';
+      tempMarker = Marker(
+        markerId: MarkerId(markerId),
+        position: location!.coordinates,
+        icon: markerIcons.last,
+        onTap: () async {
+          await showMarkerDialog(location!, markerId!);
+        },
+      );
+    }
+    else if(watchMapProv.mode == Modes.waypointsSelection){
+      readMapProv.waypoints.add(location!);
+      markerId = '${readMapProv.waypoints.length - 1}';
+      log('location added to waypoints');
+    }
+    readMapProv.updateDraggableScrollableSheetSizes();
+    updateMapCameraPosition(target: location!.coordinates);
     updateTextInputs();
-    showLocationDialog(readMapProv.destination!);
+
+    showMarkerDialog(location, markerId!);
+    setState(() {});
   }
 
-  Set<Marker> getMapMarkers(){
-    return watchMapProv.destination == null ? {} : {
-      Marker(
-        markerId: MarkerId('destination'),
-        position: readMapProv.destination!.coordinates,
-        icon: BitmapDescriptor.defaultMarker,
-        onTap: () async {
-          await showLocationDialog(readMapProv.destination!);
-        },
-      )
+  Future<void> updateMapMarkers() async {
+    mapMarkers = {
+      for (var (i, waypoint) in watchMapProv.waypoints.indexed)
+        Marker(
+          markerId: MarkerId('$i'),
+          position: waypoint.coordinates,
+          icon: markerIcons[i],
+          onTap: () async {
+            await showMarkerDialog(waypoint, '$i');
+          },
+        )
     };
+    if (watchMapProv.mode == Modes.routeSelection && tempMarker != null){
+      mapMarkers.add(tempMarker!);
+    }
   }
 
   Set<Polyline> getMapPolylines(){
-    if (readMapProv.computedRoute == null){
+    if (readMapProv.route == null){
       return {};
     }
     // polylines are drawed in order so the last one is the one being seen
     // so we are reversing it so the first path, the generated one, is on top
-    List<dynamic> paths = readMapProv.computedRoute!.paths;
-    return {
-      for (int i = 0; i < paths.length; i++)
-        Polyline(
-          polylineId: PolylineId(i.toString()),
-          color: i == highlightedPolylineIndex ? MyColors.coldBlue : MyColors.paleBlue,
-          jointType: JointType.round,
-          endCap: Cap.roundCap,
-          width: watchMapProv.mode == Modes.navigation ? 15 : 7,
-          points: paths[i].polylinePoints,
-        ),
-    };
+    Set<Polyline> polylines = {};
+    int polyId = 0;
+    for (var (i, option) in readMapProv.route!.pathOptions.indexed){
+      for (var subPath in option){
+        polylines.add(
+          Polyline(
+            polylineId: PolylineId(polyId.toString()),
+            color: i == watchMapProv.selectedRouteOptionIndex ? MyColors.coldBlue : MyColors.paleBlue,
+            jointType: JointType.round,
+            endCap: Cap.roundCap,
+            width: watchMapProv.mode == Modes.navigation ? 15 : i == watchMapProv.selectedRouteOptionIndex ? 7 : 5,
+            points: subPath.polylinePoints,
+          ),
+        );
+        polyId+=1;
+      }
+    }
+    return polylines;
   }
 
   @override
@@ -188,7 +194,9 @@ class _MapScreenState extends State<MapScreen> {
     readNavigationProv = context.read<NavigationProvider>();
     watchNavigationProv = context.watch<NavigationProvider>();
 
-    if (watchNavigationProv.lockOnCurrentPosition){
+    updateMapMarkers();
+
+    if (watchNavigationProv.lockCameraOnCurrentPosition){
       log('Following current position');
       updateMapCameraPosition(
         target: LatLng(
@@ -205,7 +213,8 @@ class _MapScreenState extends State<MapScreen> {
           alignment: AlignmentDirectional.topCenter,
           children: [
             GoogleMap(
-              myLocationButtonEnabled: true,
+              // padding: EdgeInsets.all(200),
+              myLocationButtonEnabled: false,
               myLocationEnabled: true,
               zoomControlsEnabled: true,
               zoomGesturesEnabled: true,
@@ -217,7 +226,14 @@ class _MapScreenState extends State<MapScreen> {
               onMapCreated: (controller) {
                 googleMapsController = controller;
               },
-              markers: getMapMarkers(),
+              cameraTargetBounds: CameraTargetBounds(
+                // Limiting to only be able to navigate in these boundaries
+                LatLngBounds(
+                  northeast: LatLng(-12.08013, -76.98038),
+                  southwest: LatLng(-12.11198, -77.06152),
+                ),
+              ),
+              markers: mapMarkers,
               polylines: getMapPolylines(),
               onTap: (position) {
                 if (readMapProv.mode == Modes.waypointsSelection){
@@ -225,29 +241,33 @@ class _MapScreenState extends State<MapScreen> {
                 }
               },
               onLongPress: (position) {
-                dropMarker(position);
+                dropMarker(latLngPoint: LatLng(position.latitude, position.longitude),);
+                updateMapMarkers();
               },
-              onCameraMove: (position) {
-                draggableSheetController.animateTo(
-                  dssMinChildSize,
-                  duration: Duration(milliseconds : 100),
-                  curve: Curves.linearToEaseOut,
-                );
-                //log(position.toString());
+              onCameraMoveStarted: () {
+                readNavigationProv.lockCameraOnCurrentPosition = false;
+                if(readMapProv.mode != Modes.navigation) {
+                  readMapProv.draggableSheetController.animateTo(
+                    readMapProv.dssMinChildSize,
+                    duration: Duration(milliseconds : 100),
+                    curve: Curves.linearToEaseOut,
+                  );
+                }
               },
             ),
             watchMapProv.mode != Modes.navigation ? Container() : NavigationOverlay(
               showFollowUpInstruction: false,
             ),
+            mapOverlay(),
             DraggableScrollableSheet(
-              controller: draggableSheetController,
-              initialChildSize: dssInitialChildSize,
-              minChildSize: dssMinChildSize,
+              controller: watchMapProv.draggableSheetController,
+              initialChildSize: watchMapProv.dssMainChildSize,
+              minChildSize: watchMapProv.dssMinChildSize,
+              snapSizes: watchMapProv.dssSnapSizes,
               snap: true,
-              snapSizes: dssSnapSizes,
               builder: (context, scrollController) {
                 return Container(
-                  padding: EdgeInsets.only(right: 16.0, top: 16.0, left: 16.0),
+                  padding: EdgeInsets.symmetric(horizontal: 15.0),
                   decoration: BoxDecoration(
                     color: MyColors.white,
                     borderRadius: BorderRadius.only(
@@ -260,6 +280,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: Column(
                       children: [
                         Container(
+                          margin: EdgeInsets.all(15),
                           width: 50,
                           height: 5,
                           decoration: BoxDecoration(
@@ -267,7 +288,6 @@ class _MapScreenState extends State<MapScreen> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        SizedBox(height: 10),
                         draggableScrollableSheetContent(),
                       ],
                     ),
@@ -286,199 +306,237 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Widget mapOverlay(){
+    return Container(
+      margin: EdgeInsets.only(bottom: 145, left: 15, right: 15),
+      width: double.infinity,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            backgroundColor: MyColors.grey,
+            onPressed: (){
+              readNavigationProv.lockCameraOnCurrentPosition = true;
+            },
+            child: Container(
+              padding: EdgeInsets.all(10),
+              child: Image.asset(
+                'assets/thin-target.png',
+                color: MyColors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget draggableScrollableSheetContent(){
     if (watchMapProv.mode != Modes.navigation){
-      return Column(
-        children: [
-          Text(
-            '¿A dónde quieres ir?',
-            style: MyTextStyles.h1,
-          ),
-          SizedBox(height: 20),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 15, vertical: 15),
-            decoration: BoxDecoration(
-              color: MyColors.lightGrey,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Expanded(
-                  flex: 8,
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: originInputController,
-                        style: MyTextStyles.inputTextStyle,
-                        readOnly: true,
-                        keyboardType: TextInputType.streetAddress,
-                        textAlignVertical: TextAlignVertical.center,
-                        decoration: Templates.locationInputDecoration(
-                          "Origen",
-                          Container(
-                            padding: EdgeInsets.all(10),
-                            height: 10,
-                            child: Image.asset(
-                              'assets/thin-target.png',
-                              color: MyColors.mainBlue,
-                            ),
-                          ),
-                        ),
-                        onTap: allowOriginSelection,
-                      ),
-                      SizedBox(height: 10,),
-                      TextField(
-                        controller: destinationInputController,
-                        style: MyTextStyles.inputTextStyle,
-                        keyboardType: TextInputType.streetAddress,
-                        textAlignVertical: TextAlignVertical.center,
-                        decoration: Templates.locationInputDecoration(
-                          "Destino",
-                          Container(
-                            padding: EdgeInsets.all(10),
-                            height: 10,
-                            child: Image.asset(
-                              'assets/market.png',
-                              color: MyColors.mainBlue,
-                            ),
-                          ),
-                        ),
-                        onTap: (){
-                          draggableSheetController.animateTo(
-                            1,
-                            duration: Duration(milliseconds : 300),
-                            curve: Curves.linearToEaseOut,
-                          );
-                        },
-                        onChanged: (text) async {
-                          readMapProv.searchResults = text.length > 1 ? await readMapProv.searchPlacesByText(text) : [];
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: IconButton(
-                    icon: Icon(
-                      CupertinoIcons.arrow_2_squarepath,
-                      color: MyColors.grey,
-                      size: 30,
-                    ),
-                    onPressed: () {
-                      // if (origin != null && destination != null) {
-                      //   // swaping origin and destination
-                      //   final temp = origin;
-                      //   origin = destination;
-                      //   destination = temp;
-                      //   waypoints = [destination!];
-                      //   updateTextInputs();
-                      //   setState(() {});
-                      // }
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: 20),
-          // Container(
-          //   height: 50,
-          //   width: double.infinity,
-          //   child: ElevatedButton(
-          //     style: MyButtonStyles.primary,
-          //     child: Text(
-          //       'BUSCAR RUTAS',
-          //       style: MyTextStyles.primaryButton,
-          //     ),
-          //     onPressed: () {
-          //       computeRoutes();
-          //     },
-          //   ),
-          // ),
-          // SizedBox(height: 20),
-          dssComplementaryBottomContent(),
-        ],
-      );
+      return waypointsRouteSelectionContent();
     }
     else {
-      return Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      return navigationContent();
+    }
+  }
+
+  void exitNavigation(){
+    readNavigationProv.cancelNavigation();
+    readMapProv.updateDraggableScrollableSheetSizes();
+    updateMapCameraPosition();
+  }
+
+  Widget navigationContent(){
+    List<PathModel> currentRoute = watchMapProv.route!.pathOptions[0];
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            IconButton(
+              iconSize: 60,
+              onPressed: exitNavigation,
+              icon: Image.asset(
+                'assets/cancel_icon.png',
+                color: MyColors.red,
+              ),
+            ),
+            Column(
+              children: [
+                Text('${(currentRoute[watchNavigationProv.currentSubPathIndex!].etaSeconds/60).toStringAsFixed(0)} mins', style: MyTextStyles.h1,),
+                Text('${(currentRoute[watchNavigationProv.currentSubPathIndex!].distanceMeters/1000).toStringAsFixed(1)} km - eta time', style: MyTextStyles.h3,),
+              ],
+            ),
+            IconButton(
+              iconSize: 60,
+              onPressed: () async {
+                log('Alternative Routes not implemented :()');
+                // await readNavigationProv.computeAlternativeRouteFromCurrentPosition();
+                // await readMapProv.computeRoute();
+                // draggableSheetController.animateTo(
+                //   dssSnapSizes[0],
+                //   duration: Duration(milliseconds : 100),
+                //   curve: Curves.linearToEaseOut,
+                // );
+                // updateMapCameraPosition();
+              },
+              icon: Image.asset(
+                'assets/alternative_routes_icon.png',
+                color: MyColors.mainBlue,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 10,),
+        Divider(thickness: 2, height: 20,),
+        dssComplementaryBottomContent(),          
+      ],
+    );
+  }
+
+  Widget waypointsRouteSelectionContent(){
+    return Column(
+      children: [
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+          decoration: BoxDecoration(
+            color: MyColors.lightGrey,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              IconButton(
-                iconSize: 60,
-                onPressed: (){
-                  readNavigationProv.cancelNavigation();
-                  updateDraggableScrollableSheetSizes();
-                  draggableSheetController.animateTo(
-                    dssMinChildSize,
-                    duration: Duration(milliseconds : 100),
-                    curve: Curves.linearToEaseOut,
-                  );
-                  updateMapCameraPosition();
-                },
-                icon: Image.asset(
-                  'assets/cancel_icon.png',
-                  color: MyColors.red,
+              Expanded(
+                flex: 8,
+                child: Column(
+                  children: [
+                    // TextField(
+                    //   controller: originInputController,
+                    //   style: MyTextStyles.inputTextStyle,
+                    //   readOnly: true,
+                    //   keyboardType: TextInputType.streetAddress,
+                    //   textAlignVertical: TextAlignVertical.center,
+                    //   decoration: Templates.locationInputDecoration(
+                    //     "Origen",
+                    //     Container(
+                    //       padding: EdgeInsets.all(10),
+                    //       height: 10,
+                    //       child: Image.asset(
+                    //         'assets/thin-target.png',
+                    //         color: MyColors.mainBlue,
+                    //       ),
+                    //     ),
+                    //   ),
+                    //   onTap: (){},
+                    // ),
+                    // SizedBox(height: 10,),
+                    TextField(
+                      controller: searchPlaceInputController,
+                      style: MyTextStyles.inputTextStyle,
+                      keyboardType: TextInputType.streetAddress,
+                      textAlignVertical: TextAlignVertical.center,
+                      decoration: Templates.locationInputDecoration(
+                        "Buscar Ubicación",
+                        Container(
+                          padding: EdgeInsets.all(10),
+                          height: 10,
+                          child: Image.asset(
+                            'assets/marker.png',
+                            color: MyColors.mainBlue,
+                          ),
+                        ),
+                      ),
+                      onTap: (){
+                        readMapProv.draggableSheetController.animateTo(
+                          1,
+                          duration: Duration(milliseconds : 300),
+                          curve: Curves.linearToEaseOut,
+                        );
+                      },
+                      onChanged: (text) async {
+                        readMapProv.searchResults = text.length > 1 ? await readMapProv.searchPlacesByText(text) : [];
+                      },
+                    ),
+                  ],
                 ),
               ),
-              Column(
-                children: [
-                  Text('${(watchMapProv.computedRoute!.paths[0].etaSeconds/60).toStringAsFixed(0)} mins', style: MyTextStyles.h1,),
-                  Text('${(watchMapProv.computedRoute!.paths[0].distanceMeters/1000).toStringAsFixed(1)} km - eta time', style: MyTextStyles.h3,),
-                ],
-              ),
-              IconButton(
-                iconSize: 60,
-                onPressed: () async {
-                  // await readNavigationProv.computeAlternativeRouteFromCurrentPosition();
-                  // await readMapProv.computeRoute();
-                  // updateDraggableScrollableSheetSizes();
-                  // draggableSheetController.animateTo(
-                  //   dssSnapSizes[0],
-                  //   duration: Duration(milliseconds : 100),
-                  //   curve: Curves.linearToEaseOut,
-                  // );
-                  // updateMapCameraPosition();
-                },
-                icon: Image.asset(
-                  'assets/alternative_routes_icon.png',
-                  color: MyColors.mainBlue,
-                ),
-              ),
+              // Expanded(
+              //   flex: 1,
+              //   child: IconButton(
+              //     icon: Icon(
+              //       CupertinoIcons.arrow_2_squarepath,
+              //       color: MyColors.grey,
+              //       size: 30,
+              //     ),
+              //     onPressed: () {
+              //       // if (origin != null && destination != null) {
+              //       //   // swaping origin and destination
+              //       //   final temp = origin;
+              //       //   origin = destination;
+              //       //   destination = temp;
+              //       //   waypoints = [destination!];
+              //       //   updateTextInputs();
+              //       //   setState(() {});
+              //       // }
+              //     },
+              //   ),
+              // ),
             ],
           ),
-          Divider(thickness: 2, height: 20,),
-          dssComplementaryBottomContent(),          
-        ],
-      );
-    }
+        ),
+        
+        watchMapProv.mode == Modes.waypointsSelection && watchMapProv.waypoints.length > 1 ? Container(
+          margin: EdgeInsets.symmetric(vertical: 17),
+          height: 50,
+          width: double.infinity,
+          child: ElevatedButton(
+            style: MyButtonStyles.primary,
+            child: Text(
+              'BUSCAR RUTAS',
+              style: MyTextStyles.button1,
+            ),
+            onPressed: () async {
+              if(readMapProv.waypoints.length > 0){
+                await readMapProv.computeRoute();
+                readMapProv.mode = Modes.routeSelection;
+                readMapProv.updateDraggableScrollableSheetSizes();
+                updateTextInputs();
+              }
+              else {
+                Fluttertoast.showToast(
+                  msg: "Defina al menos un punto de destino",
+                  toastLength: Toast.LENGTH_LONG
+                );
+              }
+            },
+          ),
+        ) : Container(),
+        watchMapProv.searchResults.isNotEmpty ? ListView.builder(
+          physics: NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          itemCount: searchPlaceInputController.text.isNotEmpty ? watchMapProv.searchResults.length : 0,
+          itemBuilder: (context, index){
+            return placeResultListTile(watchMapProv.searchResults[index]);
+          },
+        ) : Container(),
+        SizedBox(height: 20),
+        dssComplementaryBottomContent(),
+      ],
+    );
   }
 
 
   Widget dssComplementaryBottomContent(){
-    if (watchMapProv.mode == Modes.waypointsSelection && watchMapProv.searchResults.isNotEmpty){
-      return ListView.builder(
-        physics: NeverScrollableScrollPhysics(),
-        shrinkWrap: true,
-        itemCount: watchMapProv.searchResults.length,
-        itemBuilder: (context, index){
-          return placeResultListTile(watchMapProv.searchResults[index]);
-        },
-      );
-    }
-    else if (watchMapProv.mode == Modes.routeSelection && watchMapProv.computedRoute != null){
+    if (watchMapProv.mode == Modes.routeSelection && watchMapProv.route != null){
       return ListView.separated(
         shrinkWrap: true,
         physics: NeverScrollableScrollPhysics(),
-        itemCount: readMapProv.computedRoute!.paths.length,
+        itemCount: readMapProv.route!.pathOptions.length,
         itemBuilder: (context, index){
           return pathOptionTile(
-            pathIndex: index,
+            optionIndex: index,
             title: index == 0 ? 'Ruta óptima' : 'Ruta alternativa',
             titleColor: index == 0 ? MyColors.coldBlue : MyColors.paleBlue,
             outOfFocus: false,
@@ -489,22 +547,29 @@ class _MapScreenState extends State<MapScreen> {
         },
       );
     }
-    else if (watchMapProv.mode == Modes.navigation && watchMapProv.computedRoute != null){
+    else if (watchMapProv.mode == Modes.navigation && watchMapProv.route != null){
+      log('${watchMapProv.route!.waypoints[0].address}');
       return Container(
         //color: MyColors.red,
         height: 700, // ReorderableListView needs to be inside a Height Container, otherwise it rashes the app
         child: ReorderableListView(
-          onReorder: (int oldIndex, int newIndex){
-            log('$oldIndex, $newIndex');
+          onReorder: (int oldIndex, int newIndex) async {
+            if(newIndex > oldIndex) newIndex--;
+            final waypoint = readMapProv.waypoints.removeAt(oldIndex);
+            readMapProv.waypoints.insert(newIndex, waypoint);
+            await readMapProv.computeRoute();
+            setState(() {});
           },
           children: List.generate(
-            watchMapProv.computedRoute!.waypoints.length,
-            (index) => ListTile(
-              key: Key(index.toString()),
-              tileColor: MyColors.mainBlue,
-              title: Text('${watchMapProv.computedRoute!.waypoints[index].address}', style: MyTextStyles.h3,),
-              trailing: Icon(Icons.drag_handle_rounded),
-            ),
+            watchMapProv.waypoints.length,
+            (index) {
+              return ListTile(
+                key: Key(index.toString()),
+                tileColor: MyColors.mainBlue,
+                title: Text('${watchMapProv.waypoints[index].name}', style: MyTextStyles.h3,),
+                trailing: Icon(Icons.drag_handle_rounded),
+              );
+            }
           ),
         ),
       );
@@ -519,13 +584,22 @@ class _MapScreenState extends State<MapScreen> {
   // }
 
   Widget pathOptionTile({
-    required int pathIndex,
+    required int optionIndex,
     required String title,
     Color titleColor = MyColors.black,
     bool outOfFocus = false
   }) {
     // log(pathIndex.toString());
     // log(readMapProv.computedRoute!.paths[pathIndex].distanceMeters.toString());
+    double totalEtaSeconds = 0;
+    double totalDistanceMeters = 0;
+    List<EdgeModel> totalEdges = [];
+    for (var subPath in readMapProv.route!.pathOptions[optionIndex]){
+      totalEdges.addAll(subPath.edges);
+      totalEtaSeconds += subPath.etaSeconds;
+      totalDistanceMeters += subPath.distanceMeters;
+    }
+    
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 15, vertical: 10),
       foregroundDecoration: outOfFocus ? BoxDecoration(
@@ -560,7 +634,8 @@ class _MapScreenState extends State<MapScreen> {
                 SizedBox(height: 10,),
                 pathInfoGraphBar(
                   width: 180,
-                  path: readMapProv.computedRoute!.paths[pathIndex],
+                  edges: totalEdges,
+                  distance: totalDistanceMeters,
                 ),
                 SizedBox(height: 10,),
                 Row(
@@ -582,12 +657,12 @@ class _MapScreenState extends State<MapScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      '${(watchMapProv.computedRoute!.paths[pathIndex].etaSeconds/60).toStringAsFixed(0)} mins',
+                      '${(totalEtaSeconds/60).toStringAsFixed(0)} mins',
                       style: MyTextStyles.h2,
                     ),
                     SizedBox(width: 10,),
                     Text(
-                      '${(watchMapProv.computedRoute!.paths[pathIndex].distanceMeters/1000).toStringAsFixed(1)} km',
+                      '${(totalDistanceMeters/1000).toStringAsFixed(1)} km',
                       style: MyTextStyles.h3,
                     ),
                   ],
@@ -600,27 +675,9 @@ class _MapScreenState extends State<MapScreen> {
                     style: MyButtonStyles.primary,
                     child: Text('INICIAR RUTA', style: MyTextStyles.button2),
                     onPressed: (){
-                      // Removing the rest of unselected routes, just to leave the selected one
-                      readMapProv.computedRoute!.paths = [readMapProv.computedRoute!.paths[pathIndex]];
-                      // Since we only hace one path in paths, this will get that polyline
-                      readNavigationProv.polyline = getMapPolylines().first;
-                
-                      readMapProv.computedRoute!.waypoints = [
-                        readMapProv.destination!,
-                        readMapProv.destination!,
-                        readMapProv.destination!,
-                      ]; // FOR TESTING ONLY
-
+                      startRoute(optionIndex);
                       readMapProv.mode = Modes.navigation;
-                      // updateMapCameraPosition(
-                      //   target: readMapProv.computedRoute!.origin.coordinates,
-                      // );
-                      updateDraggableScrollableSheetSizes();
-                      draggableSheetController.animateTo(
-                        dssMinChildSize,
-                        duration: Duration(milliseconds : 100),
-                        curve: Curves.linearToEaseOut,
-                      );
+                      readMapProv.updateDraggableScrollableSheetSizes();
                       readNavigationProv.startNavigation();
                     },
                   ),
@@ -633,9 +690,17 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  void startRoute(int optionIndex){
+    // Removing the rest of unselected routes, just to leave the selected one
+    readMapProv.route!.pathOptions = [readMapProv.route!.pathOptions[optionIndex]];
+    // Since we only hace one path in paths, this will get that polyline
+    readNavigationProv.polylines = getMapPolylines().toList();
+  }
+
   Widget pathInfoGraphBar({
     required double width,
-    required PathModel path,
+    required double distance,
+    required List<EdgeModel> edges,
     double cornersRadius = 12
   }){
     
@@ -648,17 +713,17 @@ class _MapScreenState extends State<MapScreen> {
 
     return Row(
       children: List.generate(
-        path.edges.length,
+        edges.length,
         (index) => Container(
           height: 12,
-          width: path.edges[index].attributes['length']/path.distanceMeters*width,
+          width: edges[index].attributes['length']/distance*width,
           decoration: BoxDecoration(
-            color: path.edges[index].attributes['cycleway_level'] == '2' ? MyColors.turquoise : MyColors.yellow,
+            color: edges[index].attributes['cycleway_level'] == '2' ? MyColors.turquoise : MyColors.yellow,
             borderRadius: 
               index == 0 ? BorderRadius.only(
                 topLeft: Radius.circular(cornersRadius),
                 bottomLeft: Radius.circular(cornersRadius),
-              ) : index == path.edges.length-1 ? BorderRadius.only(
+              ) : index == edges.length-1 ? BorderRadius.only(
                 topRight: Radius.circular(cornersRadius),
                 bottomRight: Radius.circular(cornersRadius),
               ) : BorderRadius.zero
@@ -702,17 +767,12 @@ class _MapScreenState extends State<MapScreen> {
       child: GestureDetector(
         onTap: () async {
           FocusManager.instance.primaryFocus?.unfocus();//Closese the keyboard
-          readMapProv.destination = place;
-          readMapProv.waypoints = [readMapProv.destination!];
-          readMapProv.searchResults = [];
-          await readMapProv.computeRoute();
+          
+          setState(() {});   
+          dropMarker(location: place);
+          searchPlaceInputController.text = '';
           updateTextInputs();
-          updateDraggableScrollableSheetSizes();
-          draggableSheetController.animateTo(
-            dssSnapSizes[0],
-            duration: Duration(milliseconds : 100),
-            curve: Curves.linearToEaseOut,
-          );
+          readMapProv.updateDraggableScrollableSheetSizes();
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -728,7 +788,83 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Future<void> showLocationDialog(LocationModel location) async {
+
+  Future<void> showMarkerDialog(LocationModel location, String markerId) async {
+    List<Widget> actions = [];
+    if (watchMapProv.mode == Modes.waypointsSelection && watchMapProv.waypoints.length == 1){
+      actions.add(
+        Container(
+          width: double.infinity,
+          child: ElevatedButton(
+            style: MyButtonStyles.primaryNoElevation,
+            child: Text('Buscar Rutas', style: MyTextStyles.button2,),
+            onPressed: () async {
+              Navigator.pop(context);
+              await readMapProv.computeRoute();
+              readMapProv.mode = Modes.routeSelection;
+              readMapProv.updateDraggableScrollableSheetSizes();
+              updateTextInputs();
+            },
+          ),
+        ),
+      );
+    }
+    if(watchMapProv.mode != Modes.waypointsSelection && markerId == 'temp'){
+      actions.add(
+        Container(
+          width: double.infinity,
+          child: OutlinedButton(
+            style: MyButtonStyles.outlined,
+            child: Text('Añadir destino', style: MyTextStyles.outlined,),
+            onPressed: () async {
+              Navigator.pop(context);
+              readMapProv.waypoints.add(location);
+              await readMapProv.computeRoute();
+              startRoute(0); // always start on the first one
+              readMapProv.updateDraggableScrollableSheetSizes(forceAnimationToMainSize: true);
+            },
+          ),
+        ),
+      );
+    }
+    actions.add(
+      Container(
+        width: double.infinity,
+        child: OutlinedButton(
+          style: MyButtonStyles.outlinedRed,
+          child: Text('Eliminar Marcador', style: MyTextStyles.outlinedRed,),
+          onPressed: () async {
+            Navigator.pop(context);
+            if(markerId == 'temp'){
+              tempMarker = null;
+            }
+            else {
+              // If we are removing the last waypoint we can safely just took out the last subpath
+              if (int.parse(markerId) == readMapProv.waypoints.length - 1){
+                for(var pathOpt in readMapProv.route!.pathOptions){
+                  pathOpt.removeLast();
+                }
+                readMapProv.waypoints.removeAt(int.parse(markerId));
+                readMapProv.route!.waypoints.removeAt(int.parse(markerId));
+              }
+              else {
+                readMapProv.waypoints.removeAt(int.parse(markerId));
+                if (readMapProv.waypoints.length != 0 && readMapProv.mode != Modes.waypointsSelection){
+                  await readMapProv.computeRoute();
+                }
+              }
+              if (readMapProv.waypoints.length == 0){
+                readMapProv.route = null;
+                readMapProv.mode = Modes.waypointsSelection;
+              }
+              readMapProv.updateDraggableScrollableSheetSizes(forceAnimationToMainSize: true);
+            }
+            setState(() {});
+          },
+        ),
+      ),
+    );
+
     showDialog(
       anchorPoint: Offset(double.maxFinite, 0),
       barrierColor: Color(0x00000000),
@@ -756,9 +892,9 @@ class _MapScreenState extends State<MapScreen> {
                 borderRadius: BorderRadius.circular(15),
               ),
               elevation: 30,
-              insetPadding: EdgeInsets.only(top: 175), // NO TOCAR
-              contentPadding: EdgeInsets.only(left: 20, top: 20, right: 20, bottom: 5),
-              actionsPadding: EdgeInsets.all(8),
+              insetPadding: EdgeInsets.only(top: 220), // NO TOCAR
+              contentPadding: EdgeInsets.only(left: 20, top: 15, right: 20),
+              actionsPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
               content: Wrap(
                 direction: Axis.vertical,
                 children: [
@@ -782,35 +918,8 @@ class _MapScreenState extends State<MapScreen> {
               ),
               actionsAlignment: MainAxisAlignment.spaceEvenly,
               actions: [
-                ElevatedButton(
-                  style: MyButtonStyles.secondary,
-                  child: Text('Estrella'),
-                  onPressed: (){
-                    Navigator.pop(context);
-                  },
-                ),
-                ElevatedButton(
-                  style: MyButtonStyles.secondary,
-                  child: Text('Buscar Rutas'),
-                  onPressed: () async {
-                    if (readMapProv.origin != null && readMapProv.destination != null) {
-                      Navigator.pop(context);
-                      await readMapProv.computeRoute();
-                      updateTextInputs();
-                      updateDraggableScrollableSheetSizes();
-                      draggableSheetController.animateTo(
-                        dssSnapSizes[0],
-                        duration: Duration(milliseconds : 100),
-                        curve: Curves.linearToEaseOut,
-                      );
-                    }
-                    else {
-                      Fluttertoast.showToast(
-                        msg: "Defina al menos un punto de destino",
-                        toastLength: Toast.LENGTH_LONG
-                      );
-                    }
-                  },
+                Column(
+                  children: actions,
                 ),
               ],
             ),

@@ -9,6 +9,7 @@ import 'package:safe_ride_app/models/location_model.dart';
 import 'package:safe_ride_app/providers/map_provider.dart';
 import '../services/safe_ride_api.dart';
 import '../utils.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 
 class NavigationProvider with ChangeNotifier{
   final _safeRideApi = SafeRideApi();
@@ -18,6 +19,11 @@ class NavigationProvider with ChangeNotifier{
   NavigationProvider({
     this.mapProvider,
   });
+
+  double _currentBearing = 0.0;
+  double get currentBearing => _currentBearing;
+  set currentBearing(double currentBearing){_currentBearing = currentBearing; notifyListeners();}
+
 
   int? _currentSubPathIndex; // in a route with multiple waypoints, a sub path is the path in between waypoints
   int? get currentSubPathIndex => _currentSubPathIndex;
@@ -33,47 +39,103 @@ class NavigationProvider with ChangeNotifier{
   List<Polyline> get polylines => _polylines;
   set polylines(List<Polyline> polylines){_polylines = polylines; notifyListeners();}
 
-  bool _lockOnCurrentPosition = false;
-  bool get lockCameraOnCurrentPosition => _lockOnCurrentPosition;
-  set lockCameraOnCurrentPosition(bool lockOnCurrentPosition){_lockOnCurrentPosition = lockOnCurrentPosition; notifyListeners();}
+  bool _lockCameraOnCurrentPosition = false;
+  bool get lockCameraOnCurrentPosition => _lockCameraOnCurrentPosition;
+  set lockCameraOnCurrentPosition(bool lockOnCurrentPosition){_lockCameraOnCurrentPosition = lockOnCurrentPosition; notifyListeners();}
   
   late StreamSubscription<Position> _positionStream;
   StreamSubscription<Position> get positionStream => _positionStream;
 
+  bool _isAnimating = false;
+  bool get isAnimating => _isAnimating;
+  set isAnimating(bool isAnimating){_isAnimating = isAnimating; notifyListeners();}
+
 
   Future<void> initialize() async {
-    
     _positionStream = Geolocator.getPositionStream(
       locationSettings: LocationSettings(
-        accuracy: LocationAccuracy.best,
+        accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 0,
       ),
-    ).listen((Position position) {
-      mapProvider!.currentPosition = position;
-      log('CURRENT POSITION UPDATED ${[mapProvider!.currentPosition.latitude, mapProvider!.currentPosition.longitude].toString()}');
-      if (mapProvider!.mode == Modes.navigation){
-        handleNavigationProgress();
-      } else {
-        if(mapProvider!.currentPositionAsOrigin){
-          log('Setting new origin');
-          mapProvider!.origin = LocationModel(
-            coordinates: LatLng(
+    ).listen(
+      (Position position) {
+        mapProvider!.currentPosition = position;
+        log('CURRENT POSITION UPDATED ${[mapProvider!.currentPosition.latitude, mapProvider!.currentPosition.longitude].toString()}');
+        if (mapProvider!.mode == Modes.navigation){
+          handleNavigationProgress();
+        } else {
+          if(mapProvider!.currentPositionAsOrigin){
+            log('Setting current position as origin');
+            mapProvider!.origin = LocationModel(
+              coordinates: LatLng(
+                mapProvider!.currentPosition.latitude,
+                mapProvider!.currentPosition.longitude,
+              ),
+            );
+          }
+        }
+        // if (_lockCameraOnCurrentPosition){
+        //   log('BEARING: ${_currentBearing} _lockCameraOnCurrentPosition $_lockCameraOnCurrentPosition');
+        //   updateMapCameraPosition(
+        //     target: LatLng(
+        //       mapProvider!.currentPosition.latitude,
+        //       mapProvider!.currentPosition.longitude,
+        //     ),
+        //     bearing: _currentBearing,
+        //     animate: true,
+        //   );
+        // }
+      }
+    );
+
+    final bearingStream = FlutterCompass.events!;
+    final subscription = bearingStream.listen(
+      (data) {
+        _currentBearing = data.heading!;
+        if (_lockCameraOnCurrentPosition){
+          log('BEARING: ${_currentBearing} _lockCameraOnCurrentPosition $_lockCameraOnCurrentPosition');
+          updateMapCameraPosition(
+            target: LatLng(
               mapProvider!.currentPosition.latitude,
               mapProvider!.currentPosition.longitude,
             ),
+            bearing: _currentBearing,
           );
         }
       }
-    });
+    );
   }
 
-  void startNavigation() {
+  Future<void> updateMapCameraPosition({LatLng? target, double? bearing, bool animate = true}) async {
+    // If target not provided means it will center the camera to the current position
+    // ??= means if target is null then assign...
+    var newCameraPosition = CameraUpdate.newCameraPosition(
+      CameraPosition(
+        target: target ??= LatLng(mapProvider!.currentPosition.latitude, mapProvider!.currentPosition.longitude),
+        zoom: mapProvider!.mode == Modes.navigation ? 18 : 15,
+        tilt: mapProvider!.mode == Modes.navigation ? 50 : 0.0,
+        bearing: mapProvider!.mode == Modes.navigation && _lockCameraOnCurrentPosition ? bearing ?? 0 : 0,
+      ),
+    );
+
+    // Decides if show the animation or just move the camera on an instant
+    if (animate && _isAnimating == false){
+      _isAnimating = true;
+      await mapProvider!.googleMapsController.animateCamera(newCameraPosition);
+    } else if (animate == false) {
+      await mapProvider!.googleMapsController.moveCamera(newCameraPosition);
+    }
+  }
+
+  Future<void> startNavigation() async {
     // we require that paths only have one element, the selected one.
     if (mapProvider!.route != null && mapProvider!.route!.pathOptions.length == 1){
+      log('STARTING NAVIGATION...');
       _currentSubPathIndex = 0;
       _directionIndex = 0;
-      _lockOnCurrentPosition = true;
-      log('STARTING NAVIGATION');
+      updateMapCameraPosition(); //move camera to current position
+      _lockCameraOnCurrentPosition = true;
+      log('NAVIGATION SUCCESSFULLY STARTED!');
     }
   }
 
@@ -130,13 +192,13 @@ class NavigationProvider with ChangeNotifier{
   void cancelNavigation() {
     mapProvider!.mode = Modes.waypointsSelection;
     mapProvider!.route = null;
-    _lockOnCurrentPosition = false;
+    _lockCameraOnCurrentPosition = false;
     mapProvider!.clearDestination();
     notifyListeners();
   }
 
   Future<void> computeAlternativeRouteFromCurrentPosition() async {
-    _lockOnCurrentPosition = false;
+    _lockCameraOnCurrentPosition = false;
     // mapProvider!.mode = Modes.routeSelection;
     // LocationModel ori = mapProvider!.origin!;
     // LocationModel des = mapProvider!.destination!;

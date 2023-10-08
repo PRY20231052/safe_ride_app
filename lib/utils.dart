@@ -1,6 +1,5 @@
 import 'dart:math';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:safe_ride_app/models/location_model.dart';
 import 'package:google_maps_utils/google_maps_utils.dart';
 
 double getDistanceBetweenPoints(LatLng point1, LatLng point2){

@@ -26,6 +26,10 @@ class MapProvider with ChangeNotifier {
   late GoogleMapsGeolocation _geolocationApi;
   late GoogleMapsGeocoding _geocodingApi;
 
+  late GoogleMapController _googleMapsController;
+  GoogleMapController get googleMapsController => _googleMapsController;
+  set googleMapsController(GoogleMapController googleMapsController){_googleMapsController = googleMapsController; notifyListeners();}
+
   Modes _mode = Modes.waypointsSelection;
   Modes get mode => _mode;
   set mode(Modes mode){_mode = mode; notifyListeners();}

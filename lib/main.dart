@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:safe_ride_app/providers/navigation_provider.dart';
 import 'package:safe_ride_app/providers/map_provider.dart';
-import 'package:safe_ride_app/screens/loading_screen.dart';
+import 'package:safe_ride_app/providers/user_provider.dart';
 import 'package:safe_ride_app/screens/map_screen.dart';
 import 'package:provider/provider.dart';
 
@@ -11,6 +11,7 @@ void main() {
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (context) => UserProvider()),
         ChangeNotifierProvider(create: (context) => MapProvider()),
         ChangeNotifierProxyProvider<MapProvider, NavigationProvider>(
           create: (context) => NavigationProvider(),

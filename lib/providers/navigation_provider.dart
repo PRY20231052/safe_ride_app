@@ -190,10 +190,12 @@ class NavigationProvider with ChangeNotifier{
   }
   
   void cancelNavigation() {
+    _lockCameraOnCurrentPosition = false;
     mapProvider!.mode = Modes.waypointsSelection;
     mapProvider!.route = null;
-    _lockCameraOnCurrentPosition = false;
-    mapProvider!.clearDestination();
+    mapProvider!.clearRoute();
+    mapProvider!.updateDraggableScrollableSheetSizes();
+    updateMapCameraPosition();
     notifyListeners();
   }
 

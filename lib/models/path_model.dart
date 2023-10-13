@@ -45,5 +45,4 @@ class PathModel{
       'arrival_time': arrivalTime,
     };
   }
-
 }

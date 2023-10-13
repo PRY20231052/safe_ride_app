@@ -14,8 +14,6 @@ class LocationModel {
   });
 
   factory LocationModel.fromJson(Map<String, dynamic> json) {
-    // Convert the JSON data to the Location object.
-    log(json['coordinates'].toString());
     return LocationModel(
       coordinates: LatLng(json['coordinates']['latitude'], json['coordinates']['longitude']),
       name: json['name'] ?? '',
@@ -24,7 +22,6 @@ class LocationModel {
   }
 
   Map<String, dynamic> toJson() {
-    // Convert the Location object to a JSON representation.
     return {
       'coordinates': {'latitude': coordinates.latitude, 'longitude': coordinates.longitude},
       'name': name,

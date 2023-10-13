@@ -143,56 +143,16 @@ class MyTextStyles {
   );
 }
 
-class Templates {
+class MyTextFieldStyles {
   
-  // regular = 400 || medium = 500 || bold = 700
-  static const EdgeInsets paddingTop = EdgeInsets.only(top: 20);
-  static const EdgeInsets paddingBottom = EdgeInsets.only(bottom: 20);
-  static const EdgeInsets paddingApp = EdgeInsets.all(24);
-  static const EdgeInsets paddingHorizontal = EdgeInsets.symmetric(horizontal: 16);
-  static const EdgeInsets paddingCard = EdgeInsets.all(16);
-
-  static const OutlineInputBorder basicIB = OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(10)),
-      borderSide: BorderSide(color: MyColors.grey));
-  static const OutlineInputBorder focusedIB = OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(10)),
-      borderSide: BorderSide(color: MyColors.secondary));
-
-  static InputDecoration inputDecoration(text, IconData icon) =>
-      InputDecoration(
-        fillColor: MyColors.lightGrey,
-        filled: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        enabledBorder: basicIB,
-        focusedBorder: focusedIB,
-        border: basicIB,
-        hintText: text,
-        hintStyle: MyTextStyles.hintTextStyle,
-        prefixIcon: Icon(icon, color: MyColors.grey),
-      );
-
-  static TextField textField(
-    TextEditingController controller,
-    String text,
-    IconData icon,
-    keyboardType,
-    onTap,
-    obscure,
-  ) => TextField(
-    controller: controller,
-    obscureText: obscure,
-    style: MyTextStyles.body,
-    keyboardType: keyboardType,
-    decoration: inputDecoration(text, icon),
-    readOnly: keyboardType == TextInputType.datetime ? true : false,
-    onTap: onTap,
-  );
-
-  static InputDecoration locationInputDecoration(text, Container? prefixIcon) => 
+  static InputDecoration mainInput({String? hintText, Widget? prefixIcon}) => 
   InputDecoration(
     filled: true,
     fillColor: MyColors.lightestGrey,
+    contentPadding: EdgeInsets.symmetric(horizontal: 20), //to avoid oversizing when putting border
+    prefixIcon: prefixIcon,
+    hintText: hintText,
+    hintStyle: MyTextStyles.hintTextStyle,
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(25),
       borderSide: BorderSide.none,
@@ -204,28 +164,5 @@ class Templates {
         width: 2,
       ),
     ),
-    contentPadding: EdgeInsets.symmetric(horizontal: 20), //to avoid oversizing when putting border
-    prefixIcon: prefixIcon,
-    hintText: text,
-    hintStyle: MyTextStyles.hintTextStyle,
   );
-
-  static TextField locationField(
-    TextEditingController controller,
-    String text,
-    Container prefixIcon,
-    TextInputType keyboardType,
-    onTap,
-  ) => TextField(
-    controller: controller,
-    style: MyTextStyles.inputTextStyle,
-    readOnly: true,
-    keyboardType: keyboardType,
-    decoration: locationInputDecoration(text, prefixIcon),
-    onTap: onTap,
-  );
-
-  static String uppercase(String text) {
-    return text.toUpperCase();
-  }
 }

@@ -96,7 +96,6 @@ class MapProvider with ChangeNotifier {
 
     _currentPosition = await Geolocator.getCurrentPosition();
     _origin = LocationModel(coordinates: LatLng(_currentPosition.latitude, _currentPosition.longitude));
-    _isLoading = false;
     notifyListeners();
   }
 
@@ -200,7 +199,7 @@ class MapProvider with ChangeNotifier {
     // notifyListeners();
   }
 
-  clearDestination(){
+  clearRoute(){
     _route = null;
     _waypoints = [];
     _searchResults = [];

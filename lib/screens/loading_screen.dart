@@ -3,7 +3,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../styles.dart';
-import 'log_in_screen.dart';
+import 'user_profile_screen.dart';
 
 
 class LoadingScreen extends StatefulWidget {
@@ -23,7 +23,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
     //   loading = false;
     // });
     Navigator.pushReplacement(
-        context, CupertinoPageRoute(builder: (context) => const LogInScreen()));
+        context, CupertinoPageRoute(builder: (context) => const UserProfileScreen()));
   }
 
   @override

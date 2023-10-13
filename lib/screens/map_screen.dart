@@ -5,6 +5,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:safe_ride_app/models/favorite_location_model.dart';
+import 'package:safe_ride_app/providers/user_provider.dart';
+import 'package:safe_ride_app/screens/user_profile_screen.dart';
 import 'package:safe_ride_app/utils/asset_to_bytes.dart';
 import 'package:safe_ride_app/models/location_model.dart';
 import 'package:safe_ride_app/models/path_model.dart';
@@ -27,8 +30,12 @@ class _MapScreenState extends State<MapScreen> {
 
   late MapProvider watchMapProv;
   late MapProvider readMapProv;
+
   late NavigationProvider watchNavigationProv;
   late NavigationProvider readNavigationProv;
+
+  late UserProvider watchUserProv;
+  late UserProvider readUserProv;
 
   // CONTROLLERS
   
@@ -39,7 +46,9 @@ class _MapScreenState extends State<MapScreen> {
   Set<Marker> mapMarkers = {};
 
   // MARKERS
-  List<BitmapDescriptor> markerIcons = [];
+  List<BitmapDescriptor> enumeratedMarkersIcons = [];
+  BitmapDescriptor? starMarkerIcon;
+  BitmapDescriptor? tempMarkerIcon;
 
   @override
   initState() {
@@ -49,14 +58,20 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> asyncInit() async {
     log('Initializing...');
+
+    await Provider.of<UserProvider>(context, listen: false).initialize(); 
     await Provider.of<MapProvider>(context, listen: false).initialize();
-    await Provider.of<NavigationProvider>(context, listen: false).initialize(); 
-    markerIcons = [
+    await Provider.of<NavigationProvider>(context, listen: false).initialize();
+
+    var markerSize = 85;
+    tempMarkerIcon = BitmapDescriptor.fromBytes(await assetToBytes('assets/marker_red.png', width: markerSize,));
+    starMarkerIcon = BitmapDescriptor.fromBytes(await assetToBytes('assets/marker_purple_solid_white_star.png', width: (markerSize*0.9).round(),));
+    enumeratedMarkersIcons = [
       for(var i=1; i < 10; i++)
-        BitmapDescriptor.fromBytes(await assetToBytes('assets/marker_red_$i.png', width: 85,))
+        BitmapDescriptor.fromBytes(await assetToBytes('assets/marker_red_$i.png', width: markerSize,))
     ];
-    markerIcons.add(BitmapDescriptor.fromBytes(await assetToBytes('assets/marker_red.png', width: 85,)));
     updateTextInputs();
+    Provider.of<MapProvider>(context, listen: false).isLoading = false;
     log('Initialized!');
   }
   
@@ -68,7 +83,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   updateTextInputs(){
-    LatLng currentLatLng = LatLng(readMapProv.currentPosition.latitude, readMapProv.currentPosition.longitude);
+    // LatLng currentLatLng = LatLng(readMapProv.currentPosition.latitude, readMapProv.currentPosition.longitude);
     originInputController.text = readMapProv.currentPositionAsOrigin ? "Mi ubicación actual" : readMapProv.origin?.address ??  "";
 
     // if (readMapProv.waypoints.isNotEmpty && readMapProv.waypoints[-1].coordinates == currentLatLng){
@@ -79,7 +94,7 @@ class _MapScreenState extends State<MapScreen> {
     // }
   }
 
-  Future<void> dropMarker({LatLng? latLngPoint, LocationModel? location}) async {
+  Future<void> dropMarker({LatLng? latLngPoint, dynamic location}) async {
     // You can either provide a latlng point and it will request the rest of the location details'
     // or provide the location with full details for faster response
 
@@ -101,7 +116,7 @@ class _MapScreenState extends State<MapScreen> {
       tempMarker = Marker(
         markerId: MarkerId(markerId),
         position: location!.coordinates,
-        icon: markerIcons.last,
+        icon: tempMarkerIcon!,
         onTap: () async {
           await showMarkerDialog(location!, markerId!);
         },
@@ -110,7 +125,6 @@ class _MapScreenState extends State<MapScreen> {
     else if(watchMapProv.mode == Modes.waypointsSelection){
       readMapProv.waypoints.add(location!);
       markerId = '${readMapProv.waypoints.length - 1}';
-      log('location added to waypoints');
     }
     readMapProv.updateDraggableScrollableSheetSizes();
     readNavigationProv.updateMapCameraPosition(target: location!.coordinates);
@@ -126,12 +140,27 @@ class _MapScreenState extends State<MapScreen> {
         Marker(
           markerId: MarkerId('$i'),
           position: waypoint.coordinates,
-          icon: markerIcons[i],
+          icon: enumeratedMarkersIcons[i],
           onTap: () async {
             await showMarkerDialog(waypoint, '$i');
           },
         )
     };
+    if (watchUserProv.user != null && starMarkerIcon != null ) {
+      mapMarkers.addAll(
+        {
+          for (var (i, favoriteLocation) in watchUserProv.user!.favoriteLocations.indexed)
+            Marker(
+              markerId: MarkerId('fl$i'),
+              position: favoriteLocation.coordinates,
+              icon: starMarkerIcon!,
+              onTap: () async {
+                await showMarkerDialog(favoriteLocation, 'fl$i');
+              },
+            )
+        }
+      );
+    }
     if (watchMapProv.mode == Modes.routeSelection && tempMarker != null){
       mapMarkers.add(tempMarker!);
     }
@@ -172,6 +201,9 @@ class _MapScreenState extends State<MapScreen> {
     readNavigationProv = context.read<NavigationProvider>();
     watchNavigationProv = context.watch<NavigationProvider>();
 
+    readUserProv = context.read<UserProvider>();
+    watchUserProv = context.watch<UserProvider>();
+
     updateMapMarkers();
     
     return watchMapProv.isLoading ? MyLoadingScreen() : Scaffold(
@@ -205,7 +237,7 @@ class _MapScreenState extends State<MapScreen> {
               polylines: getMapPolylines(),
               onTap: (position) {
                 if (readMapProv.mode == Modes.waypointsSelection){
-                  readMapProv.clearDestination();
+                  readMapProv.clearRoute();
                 }
               },
               onLongPress: (position) {
@@ -226,7 +258,6 @@ class _MapScreenState extends State<MapScreen> {
 
               },
               onCameraIdle: () {
-                log('camera idle');
                 readNavigationProv.isAnimating = false;
               },
             ),
@@ -283,28 +314,60 @@ class _MapScreenState extends State<MapScreen> {
 
   Widget mapOverlay(){
     return Container(
-      margin: EdgeInsets.only(bottom: 155, left: 15, right: 15),
+      margin: EdgeInsets.only(bottom: 155, left: 15, right: 15, top: 15),
       width: double.infinity,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          FloatingActionButton(
-            backgroundColor: MyColors.grey,
-            onPressed: (){
-              if(readMapProv.mode == Modes.navigation){
-                readNavigationProv.lockCameraOnCurrentPosition = true;
-              } else {
-                readNavigationProv.updateMapCameraPosition();
-              }
-            },
-            child: Container(
-              padding: EdgeInsets.all(10),
-              child: Image.asset(
-                'assets/thin-target.png',
-                color: MyColors.white,
+          watchMapProv.mode != Modes.navigation ? Row(
+            children: [
+              FloatingActionButton(
+                heroTag: null,
+                backgroundColor: MyColors.grey,
+                onPressed: (){
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => UserProfileScreen(
+                        dropMarker: (selectedFavoriteLocation){
+                          dropMarker(location: selectedFavoriteLocation);
+                        },
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: EdgeInsets.all(10),
+                  child: Image.asset(
+                    'assets/user1.png',
+                    color: MyColors.white,
+                  ),
+                ),
               ),
-            ),
+            ],
+          ) : Container(),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              FloatingActionButton(
+                heroTag: null,
+                backgroundColor: MyColors.grey,
+                onPressed: (){
+                  if(readMapProv.mode == Modes.navigation){
+                    readNavigationProv.lockCameraOnCurrentPosition = true;
+                  } else {
+                    readNavigationProv.updateMapCameraPosition();
+                  }
+                },
+                child: Container(
+                  padding: EdgeInsets.all(10),
+                  child: Image.asset(
+                    'assets/thin-target.png',
+                    color: MyColors.white,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -313,7 +376,7 @@ class _MapScreenState extends State<MapScreen> {
 
   Widget draggableScrollableSheetContent(){
     if (watchMapProv.mode != Modes.navigation){
-      return waypointsRouteSelectionContent();
+      return waypointsAndRouteSelectionContent();
     }
     else {
       return navigationContent();
@@ -322,8 +385,7 @@ class _MapScreenState extends State<MapScreen> {
 
   void exitNavigation(){
     readNavigationProv.cancelNavigation();
-    readMapProv.updateDraggableScrollableSheetSizes();
-    readNavigationProv.updateMapCameraPosition();
+    
   }
 
   Widget navigationContent(){
@@ -374,7 +436,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget waypointsRouteSelectionContent(){
+  Widget waypointsAndRouteSelectionContent(){
     return Column(
       children: [
         Container(
@@ -416,9 +478,9 @@ class _MapScreenState extends State<MapScreen> {
                       style: MyTextStyles.inputTextStyle,
                       keyboardType: TextInputType.streetAddress,
                       textAlignVertical: TextAlignVertical.center,
-                      decoration: Templates.locationInputDecoration(
-                        "Buscar Ubicación",
-                        Container(
+                      decoration: MyTextFieldStyles.mainInput(
+                        hintText: "Buscar Ubicación",
+                        prefixIcon: Container(
                           padding: EdgeInsets.all(10),
                           height: 10,
                           child: Image.asset(
@@ -527,7 +589,6 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
     else if (watchMapProv.mode == Modes.navigation && watchMapProv.route != null){
-      log('${watchMapProv.route!.waypoints[0].address}');
       return Container(
         //color: MyColors.red,
         height: 700, // ReorderableListView needs to be inside a Height Container, otherwise it rashes the app
@@ -653,11 +714,45 @@ class _MapScreenState extends State<MapScreen> {
                   child: ElevatedButton(
                     style: MyButtonStyles.primary,
                     child: Text('INICIAR RUTA', style: MyTextStyles.button2),
-                    onPressed: (){
-                      startRoute(optionIndex);
-                      readMapProv.mode = Modes.navigation;
-                      readMapProv.updateDraggableScrollableSheetSizes();
-                      readNavigationProv.startNavigation();
+                    onPressed: () async {
+                      if(optionIndex == 1){
+                        await showDialog(
+                          context: context,
+                          builder: (context){
+                            return AlertDialog(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              elevation: 30,
+                              title: Text('Ruta Insegura', style: MyTextStyles.h1,),
+                              content: Text(
+                                'La ruta seleccionada es menos segura, ¿Desea continuar con esta ruta?',
+                                style: MyTextStyles.h3,
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: (){
+                                    Navigator.pop(context);
+                                    return;
+                                  },
+                                  child: Text('No', style: MyTextStyles.outlinedRed,),
+                                ),
+                                TextButton(
+                                  onPressed: (){
+                                    Navigator.pop(context);
+                                    startRoute(optionIndex);
+                                  },
+                                  child: Text('Si', style: MyTextStyles.outlined,),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      }
+                      else {
+                        startRoute(optionIndex);
+                      }
+                      
                     },
                   ),
                 ),
@@ -674,6 +769,10 @@ class _MapScreenState extends State<MapScreen> {
     readMapProv.route!.pathOptions = [readMapProv.route!.pathOptions[optionIndex]];
     // Since we only hace one path in paths, this will get that polyline
     readNavigationProv.polylines = getMapPolylines().toList();
+
+    readMapProv.mode = Modes.navigation;
+    readMapProv.updateDraggableScrollableSheetSizes();
+    readNavigationProv.startNavigation();
   }
 
   Widget pathInfoGraphBar({
@@ -689,15 +788,20 @@ class _MapScreenState extends State<MapScreen> {
     // for (var i = 0; i < route.pathEdges.length; i++) {
     //   route.pathEdges[i].attributes['cycleway_level'];
     // }
-
+    
     return Row(
       children: List.generate(
         edges.length,
         (index) => Container(
           height: 12,
           width: edges[index].attributes['length']/distance*width,
+
           decoration: BoxDecoration(
-            color: edges[index].attributes['cycleway_level'] == '2' ? MyColors.turquoise : MyColors.yellow,
+            color: 
+            edges[index].attributes['cycleway_level'] != '0' ? MyColors.turquoise : 
+            // int.parse(edges[index].attributes['maxspeed'] ?? '0') >= 40 ? MyColors.red : 
+            MyColors.yellow,
+
             borderRadius: 
               index == 0 ? BorderRadius.only(
                 topLeft: Radius.circular(cornersRadius),
@@ -768,25 +872,62 @@ class _MapScreenState extends State<MapScreen> {
   }
 
 
-  Future<void> showMarkerDialog(LocationModel location, String markerId) async {
+  Future<void> showMarkerDialog(dynamic location, String markerId) async {
+
+    handleMarkerDeletion() async {
+      Navigator.pop(context);
+      if(markerId == 'temp'){
+        tempMarker = null;
+      }
+      else {
+        if (int.parse(markerId) == readMapProv.waypoints.length - 1){
+          // If we are removing the last waypoint we can safely just took out the last subpath
+          readMapProv.waypoints.removeAt(int.parse(markerId));
+          if (readMapProv.route != null){
+            readMapProv.route!.waypoints.removeAt(int.parse(markerId));
+            for(var pathOpt in readMapProv.route!.pathOptions){
+              pathOpt.removeLast();
+            }
+          }
+        } else {
+          readMapProv.waypoints.removeAt(int.parse(markerId));
+          if (readMapProv.waypoints.length != 0 && readMapProv.mode != Modes.waypointsSelection){
+            await readMapProv.computeRoute();
+          }
+        }
+
+        // Clean up
+        if (readMapProv.waypoints.length == 0){
+          readMapProv.route = null;
+          readMapProv.mode = Modes.waypointsSelection;
+        } 
+        
+        readMapProv.updateDraggableScrollableSheetSizes(forceAnimationToMainSize: true);
+      }
+      setState(() {});
+    }
+
     List<Widget> actions = [];
-    if (watchMapProv.mode == Modes.waypointsSelection && watchMapProv.waypoints.length == 1){
-      actions.add(
-        Container(
-          width: double.infinity,
-          child: ElevatedButton(
-            style: MyButtonStyles.primaryNoElevation,
-            child: Text('Buscar Rutas', style: MyTextStyles.button2,),
-            onPressed: () async {
-              Navigator.pop(context);
-              await readMapProv.computeRoute();
-              readMapProv.mode = Modes.routeSelection;
-              readMapProv.updateDraggableScrollableSheetSizes();
-              updateTextInputs();
-            },
+    if (watchMapProv.mode == Modes.waypointsSelection){
+      if(watchMapProv.waypoints.length == 1 || location is FavoriteLocationModel){
+        actions.add(
+          Container(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: MyButtonStyles.primaryNoElevation,
+              child: Text('Buscar Rutas', style: MyTextStyles.button2,),
+              onPressed: () async {
+                Navigator.pop(context);
+                location is FavoriteLocationModel ? readMapProv.waypoints.add(location):(){};
+                await readMapProv.computeRoute();
+                readMapProv.mode = Modes.routeSelection;
+                readMapProv.updateDraggableScrollableSheetSizes();
+                updateTextInputs();
+              },
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
     if(watchMapProv.mode != Modes.waypointsSelection && markerId == 'temp'){
       actions.add(
@@ -799,60 +940,34 @@ class _MapScreenState extends State<MapScreen> {
               Navigator.pop(context);
               readMapProv.waypoints.add(location);
               await readMapProv.computeRoute();
-              startRoute(0); // always start on the first one
+              if(readMapProv.mode == Modes.navigation){
+                startRoute(0); // always start on the first one
+              }
               readMapProv.updateDraggableScrollableSheetSizes(forceAnimationToMainSize: true);
             },
           ),
         ),
       );
     }
-    actions.add(
-      Container(
-        width: double.infinity,
-        child: OutlinedButton(
-          style: MyButtonStyles.outlinedRed,
-          child: Text('Eliminar Marcador', style: MyTextStyles.outlinedRed,),
-          onPressed: () async {
-            Navigator.pop(context);
-            if(markerId == 'temp'){
-              tempMarker = null;
-            }
-            else {
-              if (int.parse(markerId) == readMapProv.waypoints.length - 1){
-                // If we are removing the last waypoint we can safely just took out the last subpath
-                readMapProv.waypoints.removeAt(int.parse(markerId));
-                if (readMapProv.route != null){
-                  readMapProv.route!.waypoints.removeAt(int.parse(markerId));
-                  for(var pathOpt in readMapProv.route!.pathOptions){
-                    pathOpt.removeLast();
-                  }
-                }
-              } else {
-                readMapProv.waypoints.removeAt(int.parse(markerId));
-                if (readMapProv.waypoints.length != 0 && readMapProv.mode != Modes.waypointsSelection){
-                  await readMapProv.computeRoute();
-                }
-              }
-
-              // Clean up
-              if (readMapProv.waypoints.length == 0){
-                readMapProv.route = null;
-                readMapProv.mode = Modes.waypointsSelection;
-              } 
-              
-              readMapProv.updateDraggableScrollableSheetSizes(forceAnimationToMainSize: true);
-            }
-            setState(() {});
-          },
+    if(location is !FavoriteLocationModel){
+      actions.add(
+        Container(
+          width: double.infinity,
+          child: OutlinedButton(
+            style: MyButtonStyles.outlinedRed,
+            onPressed: handleMarkerDeletion,
+            child: Text('Eliminar Marcador', style: MyTextStyles.outlinedRed,),
+          ),
         ),
-      ),
-    );
+      );
+    }
 
-    showDialog(
+    return await showDialog(
       anchorPoint: Offset(double.maxFinite, 0),
       barrierColor: Color(0x00000000),
       context: context,
       builder: (context) {
+        double dialogContentWidth = 280;
         return Stack(
           children: [
             // FOR SOME REASON PUTTING A COLORED CONTAINER BEHIND THE ALERTDIALOG
@@ -870,41 +985,77 @@ class _MapScreenState extends State<MapScreen> {
             //     ),
             //   ),
             // ),
-            AlertDialog(
+            Dialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
               ),
               elevation: 30,
               insetPadding: EdgeInsets.only(top: 220), // NO TOCAR
-              contentPadding: EdgeInsets.only(left: 20, top: 15, right: 20),
-              actionsPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-              content: Wrap(
-                direction: Axis.vertical,
-                children: [
-                  Container(
-                    width: 280,
-                    child: Text(
-                      location.name ?? 'Sin nombre',
-                      style: MyTextStyles.h1,
-                      overflow: TextOverflow.ellipsis,
+              // contentPadding: EdgeInsets.only(left: 20, top: 15, right: 20),
+              // actionsPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                child: Wrap(
+                  direction: Axis.vertical,
+                  children: [
+                    Container(
+                      width: dialogContentWidth,
+                      child: Text(
+                        location is FavoriteLocationModel ? location.alias : location.name ?? 'Sin nombre',
+                        style: MyTextStyles.h1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  Container(
-                    width: 280,
-                    child: Text(
-                      location.address ?? 'Dirección desconocida',
-                      style: MyTextStyles.h3,
-                      overflow: TextOverflow.ellipsis,
+                    Container(
+                      width: dialogContentWidth,
+                      child: Text(
+                        location.address ?? 'Dirección desconocida',
+                        style: MyTextStyles.h3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              actionsAlignment: MainAxisAlignment.spaceEvenly,
-              actions: [
-                Column(
-                  children: actions,
+                    SizedBox(height: 15,),
+                    Container(
+                      width: dialogContentWidth,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          watchUserProv.user != null ? IconButton(
+                            padding: EdgeInsets.only(right: 15),
+                            iconSize: 40,
+                            icon: Image.asset(
+                              location is FavoriteLocationModel ? 'assets/starred.png' : 'assets/outlined_star.png',
+                              color: MyColors.purple,
+                            ),
+                            onPressed: (){
+                              if(location is FavoriteLocationModel){
+                                readUserProv.deleteFavoriteLocation(location.id!);
+                                Navigator.pop(context);
+                              } else {
+                                readUserProv.addFavoriteLocation(
+                                  FavoriteLocationModel(
+                                    coordinates: location.coordinates,
+                                    name: location.name,
+                                    address: location.address,
+                                  ),
+                                );
+                                handleMarkerDeletion(); // this one already pops out of the dialog
+                              }
+                            },
+                          ) : SizedBox(),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: actions,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ],
         );

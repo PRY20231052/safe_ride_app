@@ -12,7 +12,6 @@ import '../utils.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 
 class NavigationProvider with ChangeNotifier{
-  final _safeRideApi = SafeRideApi();
 
   MapProvider? mapProvider;
 

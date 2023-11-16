@@ -10,8 +10,8 @@ import 'dart:developer';
 
 
 class SafeRideApi {
-  final String baseURL = "http://10.0.2.2:8000/api";
-  // final String baseURL = 'https://aldair98.pythonanywhere.com/api';
+  // final String baseURL = "http://10.0.2.2:8000/api";
+  final String baseURL = 'https://aldair98.pythonanywhere.com/api';
 
   //TEMP
   UserModel? sampleUser;

@@ -1,7 +1,9 @@
+// ignore_for_file: prefer_const_constructors
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../styles.dart';
-import 'log_in_screen.dart';
+import 'user_profile_screen.dart';
 
 
 class LoadingScreen extends StatefulWidget {
@@ -21,7 +23,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
     //   loading = false;
     // });
     Navigator.pushReplacement(
-        context, CupertinoPageRoute(builder: (context) => const LogInScreen()));
+        context, CupertinoPageRoute(builder: (context) => const UserProfileScreen()));
   }
 
   @override
@@ -34,11 +36,11 @@ class _LoadingScreenState extends State<LoadingScreen> {
             crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('Safe\nRide', style: MyTextStyles.head),
-              Templates.spaceBoxNH(MediaQuery.of(context).size.height * 0.1),
+              Text('Safe\nRide', style: MyTextStyles.head),
+              SizedBox(height: MediaQuery.of(context).size.height * 0.1,),
               IconButton(onPressed: ()=> _checkLoginStatus(),
                   icon: const Icon(CupertinoIcons.arrow_right_circle_fill),
-                  iconSize: 60, color: MyColors.mainTurquoise)
+                  iconSize: 60, color: MyColors.mainBlue)
             ],
           )
       ),

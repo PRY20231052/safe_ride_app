@@ -1,19 +1,19 @@
+import 'package:safe_ride_app/models/path_model.dart';
 import 'location_model.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class RouteModel {
-  final LocationModel origin;
-  final List<LocationModel> waypoints;
-  final int? distanceMeters;
-  final int? eatSeconds;
-  final Map<String, dynamic> pathGeojson;
+  LocationModel origin;
+  List<LocationModel> waypoints;
+  DateTime departureTime;
+  List<List<PathModel>> pathOptions;
+  Map<String, dynamic> pathsGeojson;
 
   RouteModel({
     required this.origin,
     required this.waypoints,
-    this.distanceMeters,
-    this.eatSeconds,
-    required this.pathGeojson,
+    required this.departureTime,
+    required this.pathOptions,
+    required this.pathsGeojson,
   });
 
   factory RouteModel.fromJson(Map<String, dynamic> json) {
@@ -21,11 +21,15 @@ class RouteModel {
     return RouteModel(
       origin: LocationModel.fromJson(json['origin']),
       waypoints: (json['waypoints'] as List)
-          .map((waypointJson) => LocationModel.fromJson(waypointJson))
-          .toList(),
-      distanceMeters: json['distance_meters'] ?? 0,
-      eatSeconds: json['eat_seconds'] ?? 0,
-      pathGeojson: json['path_geojson'] ?? {},
+        .map((waypointJson) => LocationModel.fromJson(waypointJson))
+        .toList(),
+      departureTime: DateTime.parse(json['departure_time']),
+      pathOptions: [
+        // So far, the backend only returns a maximum of 3 options, the third one being always empty
+        (json['option1'] as List).map((pathJson) => PathModel.fromJson(pathJson)).toList(),
+        (json['option2'] as List).map((pathJson) => PathModel.fromJson(pathJson)).toList(),
+      ],
+      pathsGeojson: json['path_geojson'] ?? {},
     );
   }
 
@@ -34,14 +38,12 @@ class RouteModel {
     return {
       'origin': origin.toJson(),
       'waypoints': waypoints.map((waypoint) => waypoint.toJson()).toList(),
-      'distance_meters': distanceMeters,
-      'eat_seconds': eatSeconds,
-      'path_geojson': pathGeojson,
+      'departure_time': "",
+      'path_options': [
+        for (var pathOpt in pathOptions)
+          pathOpt.map((path) => path.toJson()).toList()
+      ],
+      'path_geojson': pathsGeojson,
     };
-  }
-  List<LatLng> getLatLngPoints(){
-    return [
-      for (List coordinate in pathGeojson['features'][0]['geometry']['coordinates']) LatLng(coordinate[0], coordinate[1])
-    ];
   }
 }
